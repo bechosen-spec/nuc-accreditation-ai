@@ -14,7 +14,7 @@ from sklearn.ensemble import VotingClassifier
 def train_model():
 
     # Load dataset
-    df = pd.read_csv("dataset/nuc_dataset_22150_questionnaire_full.csv")
+    df = pd.read_csv("nuc_dataset_22150_questionnaire_full.csv")
 
     target = "actual_accreditation_status"
 
