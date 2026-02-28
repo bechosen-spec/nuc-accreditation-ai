@@ -10,6 +10,19 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.ensemble import VotingClassifier
 
 
+# =========================================================
+# PAGE CONFIG
+# =========================================================
+st.set_page_config(page_title="NUC Accreditation AI", layout="wide")
+st.title("🎓 NUC Accreditation Readiness & Advisory System")
+
+# =========================================================
+# LOAD MODEL
+# =========================================================
+# model = joblib.load("final_nuc_accreditation_model.pkl")
+# label_encoder = joblib.load("label_encoder.pkl")
+# training_columns = joblib.load("training_columns.pkl")
+
 @st.cache_resource
 def train_model():
 
@@ -82,19 +95,6 @@ def train_model():
 
 # Train model once
 model, label_encoder, training_columns = train_model()
-
-# =========================================================
-# PAGE CONFIG
-# =========================================================
-st.set_page_config(page_title="NUC Accreditation AI", layout="wide")
-st.title("🎓 NUC Accreditation Readiness & Advisory System")
-
-# =========================================================
-# LOAD MODEL
-# =========================================================
-# model = joblib.load("final_nuc_accreditation_model.pkl")
-# label_encoder = joblib.load("label_encoder.pkl")
-# training_columns = joblib.load("training_columns.pkl")
 
 clean_key = st.secrets["OPENAI_API_KEY"]
 clean_key = clean_key.replace("\u200b", "").strip()
