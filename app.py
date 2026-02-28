@@ -1,7 +1,87 @@
 import streamlit as st
 import pandas as pd
-import joblib
 from openai import OpenAI
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import VotingClassifier
+
+
+@st.cache_resource
+def train_model():
+
+    # Load dataset
+    df = pd.read_csv("dataset/nuc_dataset_22150_questionnaire_full.csv")
+
+    target = "actual_accreditation_status"
+
+    drop_cols = [
+        "programme_id",
+        "institution_name",
+        "programme_name",
+
+        # prevent leakage
+        "self_study_score",
+        "academic_score",
+        "staffing_score",
+        "physical_facilities_score",
+        "library_score",
+        "funding_score",
+        "research_score",
+
+        target
+    ]
+
+    # Features and target
+    X = df.drop(columns=drop_cols)
+    y = df[target]
+
+    # Encode target
+    le = LabelEncoder()
+    y = le.fit_transform(y)
+
+    # One-hot encode features
+    X = pd.get_dummies(X, drop_first=True)
+
+    # Save training columns for inference alignment
+    training_columns = X.columns
+
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y
+    )
+
+    # Base models
+    lr = LogisticRegression(max_iter=1000)
+    dt = DecisionTreeClassifier()
+    rf = RandomForestClassifier(n_estimators=150)
+    gb = GradientBoostingClassifier()
+
+    # Ensemble model
+    ensemble = VotingClassifier(
+        estimators=[
+            ('lr', lr),
+            ('dt', dt),
+            ('rf', rf),
+            ('gb', gb)
+        ],
+        voting='soft'
+    )
+
+    ensemble.fit(X_train, y_train)
+
+    return ensemble, le, training_columns
+
+
+# Train model once
+model, label_encoder, training_columns = train_model()
 
 # =========================================================
 # PAGE CONFIG
@@ -12,9 +92,9 @@ st.title("🎓 NUC Accreditation Readiness & Advisory System")
 # =========================================================
 # LOAD MODEL
 # =========================================================
-model = joblib.load("final_nuc_accreditation_model.pkl")
-label_encoder = joblib.load("label_encoder.pkl")
-training_columns = joblib.load("training_columns.pkl")
+# model = joblib.load("final_nuc_accreditation_model.pkl")
+# label_encoder = joblib.load("label_encoder.pkl")
+# training_columns = joblib.load("training_columns.pkl")
 
 clean_key = st.secrets["OPENAI_API_KEY"]
 clean_key = clean_key.replace("\u200b", "").strip()
