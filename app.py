@@ -353,7 +353,6 @@ Provide:
 2. Section-by-section improvement plan.
 3. Documentation checklist.
 4. Risk mitigation strategy.
-5. 90-day roadmap.
 """
 
     with st.spinner("Generating Personalized Advisory Report..."):
