@@ -2015,20 +2015,13 @@ st.markdown("""
         margin-bottom: 1rem;
     }
 
-    .section-card {
-        padding: 1rem 1.1rem;
-        border-radius: 16px;
-        border: 1px solid rgba(120,120,120,0.12);
-        background: rgba(255,255,255,0.03);
-        margin-bottom: 0.8rem;
-    }
-
     .score-card {
         padding: 1rem;
         border-radius: 16px;
         border: 1px solid rgba(120,120,120,0.12);
         background: rgba(34,197,94,0.06);
         text-align: center;
+        min-height: 120px;
     }
 
     .report-box {
@@ -2367,10 +2360,12 @@ disciplines = ["Computing", "Education", "Engineering", "Management", "Science"]
 # =========================================================
 # HELPERS
 # =========================================================
-def ask_question(label: str, key: str) -> float:
+def ask_question(label: str, key: str):
     return st.selectbox(
         label,
         [1.0, 0.5, 0.0],
+        index=None,
+        placeholder="Select an option",
         format_func=lambda x: {
             1.0: "Meets Standard",
             0.5: "Partially Meets Standard",
@@ -2395,8 +2390,19 @@ def normalized_from_score(score: int, max_score: int) -> float:
     return 0.0
 
 
-def calc_score(section: dict) -> float:
-    return 0.0 if not section else (sum(section.values()) / len(section)) * 100
+def calc_score(section: dict):
+    values = list(section.values())
+    if not values or any(v is None for v in values):
+        return None
+    return (sum(values) / len(values)) * 100
+
+
+def display_score_card(title: str, value):
+    display_value = "—" if value is None else f"{value:.2f}%"
+    st.markdown(
+        f'<div class="score-card"><h4>{title}</h4><h2>{display_value}</h2></div>',
+        unsafe_allow_html=True
+    )
 
 
 def get_feature_importance(_model, _training_columns):
@@ -2410,12 +2416,16 @@ def get_feature_importance(_model, _training_columns):
         "importance": base_model.feature_importances_
     }).sort_values(by="importance", ascending=False)
 
+
+def inputs_complete(values):
+    return all(v is not None for v in values)
+
 # =========================================================
 # STAFFING CALCULATION ENGINE
 # =========================================================
 def score_staff_student_ratio(staff_count: int, student_count: int):
-    if staff_count <= 0:
-        return 0, 0.0, 0.0
+    if staff_count is None or student_count is None or staff_count <= 0:
+        return None, None, None
     actual_ratio = student_count / staff_count
     if actual_ratio <= 20:
         score = 4
@@ -2431,6 +2441,8 @@ def score_staff_student_ratio(staff_count: int, student_count: int):
 
 
 def score_core_staff(core_staff_count: int, staff_count: int):
+    if core_staff_count is None or staff_count is None or staff_count <= 0:
+        return None, None, None
     core_pct = pct(core_staff_count, staff_count)
     if core_pct >= 75:
         score = 6
@@ -2444,9 +2456,12 @@ def score_core_staff(core_staff_count: int, staff_count: int):
 
 
 def score_staff_mix_by_rank(prof_count: int, senior_count: int, lect1_below_count: int):
+    if prof_count is None or senior_count is None or lect1_below_count is None:
+        return None, {"prof_pct": None, "senior_pct": None, "others_pct": None}, None
+
     total = prof_count + senior_count + lect1_below_count
     if total <= 0:
-        return 0, {"prof_pct": 0.0, "senior_pct": 0.0, "others_pct": 0.0}, 0.0
+        return None, {"prof_pct": None, "senior_pct": None, "others_pct": None}, None
 
     prof_pct = pct(prof_count, total)
     senior_pct = pct(senior_count, total)
@@ -2472,6 +2487,8 @@ def score_staff_mix_by_rank(prof_count: int, senior_count: int, lect1_below_coun
 
 
 def score_phd_qualification(phd_count: int, core_staff_count: int):
+    if phd_count is None or core_staff_count is None or core_staff_count <= 0:
+        return None, None, None
     phd_pct = pct(phd_count, core_staff_count)
     if phd_pct >= 70:
         score = 6
@@ -2485,6 +2502,8 @@ def score_phd_qualification(phd_count: int, core_staff_count: int):
 
 
 def score_academic_staff_dev(trained_count: int, academic_staff_count: int):
+    if trained_count is None or academic_staff_count is None or academic_staff_count <= 0:
+        return None, None, None
     dev_pct = pct(trained_count, academic_staff_count)
     if dev_pct >= 70:
         score = 5
@@ -2498,6 +2517,8 @@ def score_academic_staff_dev(trained_count: int, academic_staff_count: int):
 
 
 def score_non_teaching_staff(status_choice: str):
+    if status_choice is None:
+        return None, None
     mapping = {
         "Adequate in number and quality": (3, 1.0),
         "Not adequate in number but of good quality": (2, 0.5),
@@ -2507,6 +2528,8 @@ def score_non_teaching_staff(status_choice: str):
 
 
 def score_non_academic_staff_dev(trained_count: int, non_academic_staff_count: int):
+    if trained_count is None or non_academic_staff_count is None or non_academic_staff_count <= 0:
+        return None, None, None
     dev_pct = pct(trained_count, non_academic_staff_count)
     if dev_pct >= 70:
         score = 2
@@ -2707,42 +2730,43 @@ if st.session_state.page == "New Assessment":
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        institution = st.selectbox("Name of Institution", institutions)
+        institution = st.selectbox("Name of Institution", institutions, index=None, placeholder="Select institution")
     with c2:
-        discipline = st.selectbox("Discipline", disciplines)
+        discipline = st.selectbox("Discipline", disciplines, index=None, placeholder="Select discipline")
     with c3:
-        programme = st.selectbox("Programme", programmes)
+        programme = st.selectbox("Programme", programmes, index=None, placeholder="Select programme")
 
     st.subheader("Staffing & Enrollment Data")
 
     s1, s2, s3 = st.columns(3)
     with s1:
-        academic_staff_count = st.number_input("Number of Academic Staff", min_value=1, value=10)
+        academic_staff_count = st.number_input("Number of Academic Staff", min_value=1, value=None, placeholder="Enter value")
     with s2:
-        student_count = st.number_input("Number of Students", min_value=1, value=100)
+        student_count = st.number_input("Number of Students", min_value=1, value=None, placeholder="Enter value")
     with s3:
-        core_staff_count = st.number_input("Number of Academic Staff Core to the Subject Area", min_value=0, value=8)
+        core_staff_count = st.number_input("Number of Academic Staff Core to the Subject Area", min_value=0, value=None, placeholder="Enter value")
 
     s4, s5, s6 = st.columns(3)
     with s4:
-        professor_reader_count = st.number_input("Number of Professors/Readers", min_value=0, value=2)
+        professor_reader_count = st.number_input("Number of Professors/Readers", min_value=0, value=None, placeholder="Enter value")
     with s5:
-        senior_lecturer_count = st.number_input("Number of Senior Lecturers", min_value=0, value=3)
+        senior_lecturer_count = st.number_input("Number of Senior Lecturers", min_value=0, value=None, placeholder="Enter value")
     with s6:
-        lecturer1_below_count = st.number_input("Number of Lecturers I and Below", min_value=0, value=5)
+        lecturer1_below_count = st.number_input("Number of Lecturers I and Below", min_value=0, value=None, placeholder="Enter value")
 
     s7, s8, s9 = st.columns(3)
     with s7:
-        phd_holder_count = st.number_input("Number of Ph.D Holders", min_value=0, value=5)
+        phd_holder_count = st.number_input("Number of Ph.D Holders", min_value=0, value=None, placeholder="Enter value")
     with s8:
-        academic_staff_dev_count = st.number_input("Number of Academic Staff with Staff Development Programme", min_value=0, value=4)
+        academic_staff_dev_count = st.number_input("Number of Academic Staff with Staff Development Programme", min_value=0, value=None, placeholder="Enter value")
     with s9:
-        non_academic_staff_count = st.number_input("Number of Non-Academic Staff", min_value=0, value=5)
+        non_academic_staff_count = st.number_input("Number of Non-Academic Staff", min_value=0, value=None, placeholder="Enter value")
 
     non_academic_staff_dev_count = st.number_input(
         "Number of Non-Academic Staff with Staff Development Programme",
         min_value=0,
-        value=3
+        value=None,
+        placeholder="Enter value"
     )
 
     non_teaching_quality_choice = st.selectbox(
@@ -2751,63 +2775,84 @@ if st.session_state.page == "New Assessment":
             "Adequate in number and quality",
             "Not adequate in number but of good quality",
             "Inadequate in number and of poor quality",
-        ]
+        ],
+        index=None,
+        placeholder="Select status"
     )
 
-    ratio_score_raw, actual_ratio, staff_ratio_feature = score_staff_student_ratio(
-        academic_staff_count, student_count
-    )
-    core_score_raw, core_pct, core_staff_feature = score_core_staff(
-        core_staff_count, academic_staff_count
-    )
-    mix_score_raw, mix_pct_dict, staff_mix_feature = score_staff_mix_by_rank(
-        professor_reader_count, senior_lecturer_count, lecturer1_below_count
-    )
-    phd_score_raw, phd_pct, phd_feature = score_phd_qualification(
-        phd_holder_count, core_staff_count
-    )
-    acad_dev_score_raw, acad_dev_pct, acad_dev_feature = score_academic_staff_dev(
-        academic_staff_dev_count, academic_staff_count
-    )
-    non_teach_score_raw, non_teach_feature = score_non_teaching_staff(non_teaching_quality_choice)
-    non_acad_dev_score_raw, non_acad_dev_pct, non_acad_dev_feature = score_non_academic_staff_dev(
-        non_academic_staff_dev_count, non_academic_staff_count
-    )
+    staffing_inputs_complete = inputs_complete([
+        academic_staff_count, student_count, core_staff_count,
+        professor_reader_count, senior_lecturer_count, lecturer1_below_count,
+        phd_holder_count, academic_staff_dev_count,
+        non_academic_staff_count, non_academic_staff_dev_count,
+        non_teaching_quality_choice
+    ])
 
-    with st.expander("Computed Staffing Indicators", expanded=True):
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("Staff to Student Ratio", f"1 : {round(actual_ratio, 2)}")
-            st.metric("Staff/Student Ratio Score", f"{ratio_score_raw}/4")
-        with m2:
-            st.metric("Core Staff Percentage", f"{round(core_pct, 2)}%")
-            st.metric("Core Staff Score", f"{core_score_raw}/6")
-        with m3:
-            st.metric("Ph.D Holder Percentage", f"{round(phd_pct, 2)}%")
-            st.metric("Ph.D Qualification Score", f"{phd_score_raw}/6")
+    if staffing_inputs_complete:
+        ratio_score_raw, actual_ratio, staff_ratio_feature = score_staff_student_ratio(
+            academic_staff_count, student_count
+        )
+        core_score_raw, core_pct, core_staff_feature = score_core_staff(
+            core_staff_count, academic_staff_count
+        )
+        mix_score_raw, mix_pct_dict, staff_mix_feature = score_staff_mix_by_rank(
+            professor_reader_count, senior_lecturer_count, lecturer1_below_count
+        )
+        phd_score_raw, phd_pct, phd_feature = score_phd_qualification(
+            phd_holder_count, core_staff_count
+        )
+        acad_dev_score_raw, acad_dev_pct, acad_dev_feature = score_academic_staff_dev(
+            academic_staff_dev_count, academic_staff_count
+        )
+        non_teach_score_raw, non_teach_feature = score_non_teaching_staff(non_teaching_quality_choice)
+        non_acad_dev_score_raw, non_acad_dev_pct, non_acad_dev_feature = score_non_academic_staff_dev(
+            non_academic_staff_dev_count, non_academic_staff_count
+        )
 
-        m4, m5, m6 = st.columns(3)
-        with m4:
-            st.metric(
-                "Staff Mix %",
-                f"{round(mix_pct_dict['prof_pct'],1)} : {round(mix_pct_dict['senior_pct'],1)} : {round(mix_pct_dict['others_pct'],1)}"
-            )
-            st.metric("Staff Mix by Rank Score", f"{mix_score_raw}/5")
-        with m5:
-            st.metric("Academic Staff Development %", f"{round(acad_dev_pct, 2)}%")
-            st.metric("Academic Staff Development Score", f"{acad_dev_score_raw}/5")
-        with m6:
-            st.metric("Non-Academic Staff Development %", f"{round(non_acad_dev_pct, 2)}%")
-            st.metric("Non-Academic Staff Development Score", f"{non_acad_dev_score_raw}/2")
+        with st.expander("Computed Staffing Indicators", expanded=True):
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Staff to Student Ratio", f"1 : {round(actual_ratio, 2)}")
+                st.metric("Staff/Student Ratio Score", f"{ratio_score_raw}/4")
+            with m2:
+                st.metric("Core Staff Percentage", f"{round(core_pct, 2)}%")
+                st.metric("Core Staff Score", f"{core_score_raw}/6")
+            with m3:
+                st.metric("Ph.D Holder Percentage", f"{round(phd_pct, 2)}%")
+                st.metric("Ph.D Qualification Score", f"{phd_score_raw}/6")
 
-        st.metric("Non-Teaching Staff Score", f"{non_teach_score_raw}/3")
+            m4, m5, m6 = st.columns(3)
+            with m4:
+                st.metric(
+                    "Staff Mix %",
+                    f"{round(mix_pct_dict['prof_pct'],1)} : {round(mix_pct_dict['senior_pct'],1)} : {round(mix_pct_dict['others_pct'],1)}"
+                )
+                st.metric("Staff Mix by Rank Score", f"{mix_score_raw}/5")
+            with m5:
+                st.metric("Academic Staff Development %", f"{round(acad_dev_pct, 2)}%")
+                st.metric("Academic Staff Development Score", f"{acad_dev_score_raw}/5")
+            with m6:
+                st.metric("Non-Academic Staff Development %", f"{round(non_acad_dev_pct, 2)}%")
+                st.metric("Non-Academic Staff Development Score", f"{non_acad_dev_score_raw}/2")
+
+            st.metric("Non-Teaching Staff Score", f"{non_teach_score_raw}/3")
+    else:
+        ratio_score_raw = actual_ratio = staff_ratio_feature = None
+        core_score_raw = core_pct = core_staff_feature = None
+        mix_score_raw = staff_mix_feature = None
+        mix_pct_dict = {"prof_pct": None, "senior_pct": None, "others_pct": None}
+        phd_score_raw = phd_pct = phd_feature = None
+        acad_dev_score_raw = acad_dev_pct = acad_dev_feature = None
+        non_teach_score_raw = non_teach_feature = None
+        non_acad_dev_score_raw = non_acad_dev_pct = non_acad_dev_feature = None
+        st.info("Enter all staffing and enrollment figures to compute staffing indicators.")
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Academic Content",
         "Staffing",
         "Physical Facilities",
         "Library",
-        "Funding & Research",
+        "Funding, Research & Tracer",
     ])
 
     with tab1:
@@ -2862,14 +2907,15 @@ if st.session_state.page == "New Assessment":
         funding_amount = st.number_input(
             "How much funding is allocated to the programme yearly? (₦)",
             min_value=0.0,
-            step=100000.0,
-            value=5000000.0,
+            value=None,
+            placeholder="Enter amount"
         )
 
         funding_band = st.selectbox(
             "Overall funding adequacy",
             ["Adequate", "Moderately Adequate", "Inadequate"],
-            index=1
+            index=None,
+            placeholder="Select funding adequacy"
         )
 
         funding_map = {
@@ -2879,7 +2925,7 @@ if st.session_state.page == "New Assessment":
         }
 
         funding = {
-            "programme_funding_adequate": funding_map[funding_band],
+            "programme_funding_adequate": funding_map[funding_band] if funding_band is not None else None,
             "budget_release_regular": ask_question("Budget release is regular", "fd1"),
             "equipment_maintenance_budget_available": ask_question("Equipment maintenance budget is available", "fd2"),
         }
@@ -2887,21 +2933,12 @@ if st.session_state.page == "New Assessment":
         research = {
             "research_collaboration_active": ask_question("Research and collaboration activities are satisfactory", "r1"),
             "research_output_present": ask_question("Research output is satisfactory", "r2"),
-            "employer_rating_positive": ask_question("Tracer and employers' rating is satisfactory", "r3"),
+            "employer_rating_positive": ask_question("Employers’ rating is satisfactory", "r3"),
             "tracer_study_available": ask_question("Tracer study evidence is available", "r4"),
         }
 
-    input_data = {}
-    input_data.update(academic)
-    input_data.update(staffing)
-    input_data.update(facilities)
-    input_data.update(library)
-    input_data.update(funding)
-    input_data.update(research)
-    input_data["staff_student_ratio_compliant"] = staff_ratio_feature
-    input_data["discipline"] = discipline
-
     academic_score = calc_score(academic)
+
     staffing_display_items = {
         "staff_student_ratio_compliant": staff_ratio_feature,
         "proportion_core_staff_sufficient": core_staff_feature,
@@ -2913,36 +2950,96 @@ if st.session_state.page == "New Assessment":
         "academic_staff_development_programme": acad_dev_feature,
         "non_academic_staff_development_programme": non_acad_dev_feature,
     }
+
     staffing_score = calc_score(staffing_display_items)
     physical_facilities_score = calc_score(facilities)
     library_score = calc_score(library)
     funding_score = calc_score(funding)
-    research_score = calc_score(research)
 
-    a1, a2, a3 = st.columns(3)
-    with a1:
-        st.markdown(f'<div class="score-card"><h4>Academic Score</h4><h2>{academic_score:.2f}%</h2></div>', unsafe_allow_html=True)
-    with a2:
-        st.markdown(f'<div class="score-card"><h4>Staffing Score</h4><h2>{staffing_score:.2f}%</h2></div>', unsafe_allow_html=True)
-    with a3:
-        st.markdown(f'<div class="score-card"><h4>Physical Facilities Score</h4><h2>{physical_facilities_score:.2f}%</h2></div>', unsafe_allow_html=True)
+    research_collaboration_score = calc_score({
+        "research_collaboration_active": research["research_collaboration_active"],
+        "research_output_present": research["research_output_present"]
+    })
 
-    b1, b2, b3 = st.columns(3)
-    with b1:
-        st.markdown(f'<div class="score-card"><h4>Library Score</h4><h2>{library_score:.2f}%</h2></div>', unsafe_allow_html=True)
-    with b2:
-        st.markdown(f'<div class="score-card"><h4>Funding Score</h4><h2>{funding_score:.2f}%</h2></div>', unsafe_allow_html=True)
-    with b3:
+    tracer_employers_score = calc_score({
+        "employer_rating_positive": research["employer_rating_positive"],
+        "tracer_study_available": research["tracer_study_available"]
+    })
+
+    if all(v is not None for v in [
+        academic_score, staffing_score, physical_facilities_score,
+        library_score, funding_score, research_collaboration_score,
+        tracer_employers_score
+    ]):
         self_study_score = (
-            academic_score * 0.30 +
-            staffing_score * 0.28 +
-            physical_facilities_score * 0.22 +
-            library_score * 0.15 +
-            funding_score * 0.05
+            academic_score * 0.25 +
+            staffing_score * 0.25 +
+            physical_facilities_score * 0.15 +
+            library_score * 0.10 +
+            funding_score * 0.10 +
+            research_collaboration_score * 0.10 +
+            tracer_employers_score * 0.05
         )
-        st.markdown(f'<div class="score-card"><h4>Self Study Score</h4><h2>{self_study_score:.2f}%</h2></div>', unsafe_allow_html=True)
+    else:
+        self_study_score = None
+
+    st.subheader("Section Scores")
+
+    row1 = st.columns(4)
+    row2 = st.columns(4)
+
+    with row1[0]:
+        display_score_card("Academic Content", academic_score)
+    with row1[1]:
+        display_score_card("Staffing", staffing_score)
+    with row1[2]:
+        display_score_card("Physical Facilities", physical_facilities_score)
+    with row1[3]:
+        display_score_card("Library", library_score)
+
+    with row2[0]:
+        display_score_card("Funding", funding_score)
+    with row2[1]:
+        display_score_card("Research & Collaboration", research_collaboration_score)
+    with row2[2]:
+        display_score_card("Tracer & Employers’ Rating", tracer_employers_score)
+    with row2[3]:
+        display_score_card("Total (Self Study Score)", self_study_score)
+
+    required_basic = inputs_complete([institution, discipline, programme])
+    required_all_sections = all([
+        calc_score(academic) is not None,
+        calc_score(staffing_display_items) is not None,
+        calc_score(facilities) is not None,
+        calc_score(library) is not None,
+        calc_score(funding) is not None,
+        research_collaboration_score is not None,
+        tracer_employers_score is not None,
+    ])
 
     if st.button("Generate Accreditation Decision and Advisory", type="primary", use_container_width=True):
+        if not required_basic:
+            st.error("Please complete the institutional information section.")
+            st.stop()
+
+        if not staffing_inputs_complete:
+            st.error("Please complete all staffing and enrollment inputs.")
+            st.stop()
+
+        if not required_all_sections or self_study_score is None:
+            st.error("Please complete all assessment sections before generating the result.")
+            st.stop()
+
+        input_data = {}
+        input_data.update(academic)
+        input_data.update(staffing)
+        input_data.update(facilities)
+        input_data.update(library)
+        input_data.update(funding)
+        input_data.update(research)
+        input_data["staff_student_ratio_compliant"] = staff_ratio_feature
+        input_data["discipline"] = discipline
+
         input_df = pd.DataFrame([input_data])
         input_encoded = pd.get_dummies(input_df)
         input_encoded = input_encoded.reindex(columns=training_columns, fill_value=0)
