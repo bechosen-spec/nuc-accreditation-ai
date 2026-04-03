@@ -2008,7 +2008,7 @@ st.markdown("""
     }
 
     .hero-card {
-        padding: 1.4rem 1.5rem;
+        padding: 1.2rem 1.4rem;
         border-radius: 18px;
         border: 1px solid rgba(120,120,120,0.15);
         background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(99,102,241,0.08));
@@ -2032,11 +2032,6 @@ st.markdown("""
         line-height: 1.7;
     }
 
-    .small-muted {
-        color: #94a3b8;
-        font-size: 0.92rem;
-    }
-
     div[data-testid="stMetric"] {
         background: rgba(255,255,255,0.03);
         border: 1px solid rgba(120,120,120,0.10);
@@ -2054,11 +2049,7 @@ st.markdown("""
 
 st.markdown("""
 <div class="hero-card">
-    <h1 style="margin-bottom:0.25rem;">🎓 NUC Accreditation Prediction System</h1>
-    <p class="small-muted" style="margin:0;">
-        AI-powered accreditation readiness assessment with automated scoring,
-        ensemble prediction, saved assessments, and personalized advisory reporting.
-    </p>
+    <h1 style="margin-bottom:0;">🎓 NUC Accreditation Prediction System</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2135,7 +2126,7 @@ def create_user(full_name: str, email: str, password: str):
             )
         )
         conn.commit()
-        return True, "Account created successfully."
+        return True, "Account creation is successful."
     except sqlite3.IntegrityError:
         return False, "An account with that email already exists."
     finally:
@@ -2367,9 +2358,9 @@ def ask_question(label: str, key: str):
         index=None,
         placeholder="Select an option",
         format_func=lambda x: {
-            1.0: "Meets Standard",
-            0.5: "Partially Meets Standard",
-            0.0: "Does Not Meet Standard",
+            1.0: "Option 1 / Best Fit",
+            0.5: "Option 2 / Moderate Fit",
+            0.0: "Option 3 / Weak Fit",
         }[x],
         key=key,
     )
@@ -2426,7 +2417,7 @@ def inputs_complete(values):
 def score_staff_student_ratio(staff_count: int, student_count: int):
     if staff_count is None or student_count is None or staff_count <= 0:
         return None, None, None
-    actual_ratio = student_count / staff_count
+    actual_ratio = round(student_count / staff_count)
     if actual_ratio <= 20:
         score = 4
     elif actual_ratio <= 25:
@@ -2463,16 +2454,16 @@ def score_staff_mix_by_rank(prof_count: int, senior_count: int, lect1_below_coun
     if total <= 0:
         return None, {"prof_pct": None, "senior_pct": None, "others_pct": None}, None
 
-    prof_pct = pct(prof_count, total)
-    senior_pct = pct(senior_count, total)
-    others_pct = pct(lect1_below_count, total)
+    prof_pct = round(pct(prof_count, total))
+    senior_pct = round(pct(senior_count, total))
+    others_pct = 100 - prof_pct - senior_pct
 
-    prof_ok = abs(prof_pct - 20) <= 5
-    senior_ok = abs(senior_pct - 35) <= 5
-    others_ok = abs(others_pct - 45) <= 5
+    prof_ok = abs(prof_pct - 20) <= 2
+    senior_ok = abs(senior_pct - 35) <= 2
+    others_ok = abs(others_pct - 45) <= 2
     categories_met = sum([prof_ok, senior_ok, others_ok])
 
-    if categories_met == 3 or prof_pct > 25:
+    if categories_met == 3:
         score = 5
     elif categories_met >= 1:
         score = 3
@@ -2564,7 +2555,7 @@ def generate_advisory_report(
     discipline: str,
     self_study_score: float,
     predicted_status: str,
-    actual_ratio: float,
+    actual_ratio: int,
     ratio_score_raw: int,
     core_pct: float,
     core_score_raw: int,
@@ -2590,17 +2581,17 @@ Institution: {institution}
 Programme: {programme}
 Discipline: {discipline}
 
-Self Study Score: {round(self_study_score, 2)}%
+Programme Score: {round(self_study_score, 2)}%
 Predicted Accreditation Status: {predicted_status}
 
 Calculated staffing indicators:
-- Staff to Student Ratio: 1:{round(actual_ratio, 2)}
+- Staff to Student Ratio: 1:{actual_ratio}
 - Staff to Student Ratio Score: {ratio_score_raw}/4
 - Core Staff Percentage: {round(core_pct, 2)}%
 - Core Staff Score: {core_score_raw}/6
-- Staff Mix Score: {mix_score_raw}/5
-- PhD Qualification Percentage: {round(phd_pct, 2)}%
-- PhD Qualification Score: {phd_score_raw}/6
+- Staff Mix by Rank Score: {mix_score_raw}/5
+- PhD Holders Percentage: {round(phd_pct, 2)}%
+- Qualifications of Teaching Staff Score: {phd_score_raw}/6
 - Academic Staff Development Percentage: {round(acad_dev_pct, 2)}%
 - Academic Staff Development Score: {acad_dev_score_raw}/5
 - Non-Teaching Staff Score: {non_teach_score_raw}/3
@@ -2740,11 +2731,11 @@ if st.session_state.page == "New Assessment":
 
     s1, s2, s3 = st.columns(3)
     with s1:
-        academic_staff_count = st.number_input("Number of Academic Staff", min_value=1, value=None, placeholder="Enter value")
+        academic_staff_count = st.number_input("Number of academic staff", min_value=1, value=None, placeholder="Enter value")
     with s2:
-        student_count = st.number_input("Number of Students", min_value=1, value=None, placeholder="Enter value")
+        student_count = st.number_input("Number of students", min_value=1, value=None, placeholder="Enter value")
     with s3:
-        core_staff_count = st.number_input("Number of Academic Staff Core to the Subject Area", min_value=0, value=None, placeholder="Enter value")
+        core_staff_count = st.number_input("Number of academic staff core to the subject area", min_value=0, value=None, placeholder="Enter value")
 
     s4, s5, s6 = st.columns(3)
     with s4:
@@ -2752,25 +2743,25 @@ if st.session_state.page == "New Assessment":
     with s5:
         senior_lecturer_count = st.number_input("Number of Senior Lecturers", min_value=0, value=None, placeholder="Enter value")
     with s6:
-        lecturer1_below_count = st.number_input("Number of Lecturers I and Below", min_value=0, value=None, placeholder="Enter value")
+        lecturer1_below_count = st.number_input("Number of Lecturers I and below", min_value=0, value=None, placeholder="Enter value")
 
     s7, s8, s9 = st.columns(3)
     with s7:
         phd_holder_count = st.number_input("Number of Ph.D Holders", min_value=0, value=None, placeholder="Enter value")
     with s8:
-        academic_staff_dev_count = st.number_input("Number of Academic Staff with Staff Development Programme", min_value=0, value=None, placeholder="Enter value")
+        academic_staff_dev_count = st.number_input("Number of academic staff with staff development programme", min_value=0, value=None, placeholder="Enter value")
     with s9:
-        non_academic_staff_count = st.number_input("Number of Non-Academic Staff", min_value=0, value=None, placeholder="Enter value")
+        non_academic_staff_count = st.number_input("Number of non-teaching staff", min_value=0, value=None, placeholder="Enter value")
 
     non_academic_staff_dev_count = st.number_input(
-        "Number of Non-Academic Staff with Staff Development Programme",
+        "Number of non-academic staff with staff development programme",
         min_value=0,
         value=None,
         placeholder="Enter value"
     )
 
     non_teaching_quality_choice = st.selectbox(
-        "Non-Teaching Staff Status",
+        "Non-Teaching Staff",
         [
             "Adequate in number and quality",
             "Not adequate in number but of good quality",
@@ -2812,27 +2803,27 @@ if st.session_state.page == "New Assessment":
         with st.expander("Computed Staffing Indicators", expanded=True):
             m1, m2, m3 = st.columns(3)
             with m1:
-                st.metric("Staff to Student Ratio", f"1 : {round(actual_ratio, 2)}")
-                st.metric("Staff/Student Ratio Score", f"{ratio_score_raw}/4")
+                st.metric("Staff to Student Ratio", f"1 : {actual_ratio}")
+                st.metric("Staff to Student Ratio Score", f"{ratio_score_raw}/4")
             with m2:
-                st.metric("Core Staff Percentage", f"{round(core_pct, 2)}%")
-                st.metric("Core Staff Score", f"{core_score_raw}/6")
+                st.metric("Percentage of Staff Core to the Subject Area", f"{round(core_pct, 2)}%")
+                st.metric("Proportion of Staff Core to the Subject Area Score", f"{core_score_raw}/6")
             with m3:
-                st.metric("Ph.D Holder Percentage", f"{round(phd_pct, 2)}%")
-                st.metric("Ph.D Qualification Score", f"{phd_score_raw}/6")
+                st.metric("Ph.D Holders Percentage", f"{round(phd_pct, 2)}%")
+                st.metric("Qualifications of Teaching Staff Score", f"{phd_score_raw}/6")
 
             m4, m5, m6 = st.columns(3)
             with m4:
                 st.metric(
-                    "Staff Mix %",
-                    f"{round(mix_pct_dict['prof_pct'],1)} : {round(mix_pct_dict['senior_pct'],1)} : {round(mix_pct_dict['others_pct'],1)}"
+                    "Staff Mix by Rank",
+                    f"{mix_pct_dict['prof_pct']}:{mix_pct_dict['senior_pct']}:{mix_pct_dict['others_pct']}"
                 )
                 st.metric("Staff Mix by Rank Score", f"{mix_score_raw}/5")
             with m5:
-                st.metric("Academic Staff Development %", f"{round(acad_dev_pct, 2)}%")
+                st.metric("Academic Staff Development Percentage", f"{round(acad_dev_pct, 2)}%")
                 st.metric("Academic Staff Development Score", f"{acad_dev_score_raw}/5")
             with m6:
-                st.metric("Non-Academic Staff Development %", f"{round(non_acad_dev_pct, 2)}%")
+                st.metric("Non-Academic Staff Development Percentage", f"{round(non_acad_dev_pct, 2)}%")
                 st.metric("Non-Academic Staff Development Score", f"{non_acad_dev_score_raw}/2")
 
             st.metric("Non-Teaching Staff Score", f"{non_teach_score_raw}/3")
@@ -2847,29 +2838,32 @@ if st.session_state.page == "New Assessment":
         non_acad_dev_score_raw = non_acad_dev_pct = non_acad_dev_feature = None
         st.info("Enter all staffing and enrollment figures to compute staffing indicators.")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Academic Content",
         "Staffing",
         "Physical Facilities",
         "Library",
-        "Funding, Research & Tracer",
+        "Funding",
+        "Research and Collaboration",
+        "Tracer and Employers’ Rating",
     ])
 
     with tab1:
         academic = {
-            "curriculum_aligned_with_BMAS": ask_question("Relationship between CCMAS/BMAS and the curriculum is satisfactory", "a1"),
-            "innovative_courses_present": ask_question("Innovation (additional courses) is satisfactory", "a2"),
-            "curriculum_coverage_complete": ask_question("Coverage of the curriculum is satisfactory", "a3"),
-            "admission_requirements_compliant": ask_question("Admission requirements comply with NUC standards", "a4"),
-            "academic_regulations_defined": ask_question("Academic regulations are adequate and current", "a5"),
-            "tests_and_examinations_standardized": ask_question("Tests and examinations are properly standardized", "a6"),
-            "evaluation_methods_clear": ask_question("Evaluation of students' work is satisfactory", "a7"),
-            "degree_projects_adequate": ask_question("Degree projects are satisfactory", "a8"),
-            "practical_work_adequate": ask_question("Practical work is satisfactory", "a9"),
-            "student_course_evaluation_present": ask_question("Students' course evaluation is implemented", "a10"),
-            "skills_acquisition_programme": ask_question("Skills acquisition component is satisfactory", "a11"),
-            "external_examiner_system": ask_question("External examination system is satisfactory", "a12"),
-            "internal_quality_assurance": ask_question("Internal quality assurance is satisfactory", "a13"),
+            "philosophy_objectives_defined": ask_question("Philosophy and Objectives of the Programme", "a0"),
+            "curriculum_aligned_with_BMAS": ask_question("Relationship between CCMAS and Curriculum", "a1"),
+            "innovative_courses_present": ask_question("Innovation (Additional Courses)", "a2"),
+            "curriculum_coverage_complete": ask_question("Coverage of the Curriculum", "a3"),
+            "admission_requirements_compliant": ask_question("Admission Requirements into the Programme", "a4"),
+            "academic_regulations_defined": ask_question("Academic Regulations", "a5"),
+            "tests_and_examinations_standardized": ask_question("Standard of Tests and Examinations", "a6"),
+            "evaluation_methods_clear": ask_question("Evaluation of Students’ Work", "a7"),
+            "degree_projects_adequate": ask_question("Degree Projects are of good quality and well supervised", "a8"),
+            "practical_work_adequate": ask_question("Practical Works are of good quality", "a9"),
+            "student_course_evaluation_present": ask_question("Students’ Course Evaluation", "a10"),
+            "skills_acquisition_programme": ask_question("Skills Acquisition", "a11"),
+            "external_examiner_system": ask_question("External Examination System", "a12"),
+            "internal_quality_assurance": ask_question("Internal Quality Assurance", "a13"),
         }
 
     with tab2:
@@ -2877,8 +2871,8 @@ if st.session_state.page == "New Assessment":
             "proportion_core_staff_sufficient": core_staff_feature,
             "staff_rank_mix_balanced": staff_mix_feature,
             "academic_staff_qualification_high": phd_feature,
-            "staff_competence_verified": ask_question("Competence of the teaching staff is satisfactory", "s1"),
-            "administrative_support_available": ask_question("The administration of College/School/Faculty/Department is satisfactory", "s2"),
+            "staff_competence_verified": ask_question("Competence of Teaching Staff", "s1"),
+            "administrative_support_available": ask_question("Administration of College/School/Faculty/Department", "s2"),
             "non_teaching_staff_adequate": non_teach_feature,
             "academic_staff_development_programme": acad_dev_feature,
             "non_academic_staff_development_programme": non_acad_dev_feature,
@@ -2887,54 +2881,39 @@ if st.session_state.page == "New Assessment":
 
     with tab3:
         facilities = {
-            "laboratory_space_adequate": ask_question("Laboratory space meets the required standard", "f1"),
-            "laboratory_equipment_adequate": ask_question("Laboratory equipment is adequate and functional", "f2"),
-            "classroom_space_adequate": ask_question("Classroom space is adequate", "f3"),
-            "classroom_equipment_adequate": ask_question("Classroom equipment is adequate", "f4"),
-            "office_accommodation_adequate": ask_question("Office accommodation is adequate", "f5"),
-            "safety_environment_present": ask_question("Safety and environment requirements are satisfactorily met", "f6"),
+            "laboratory_space_adequate": ask_question("Laboratories/Clinics/Studios/Farms/Museums", "f1"),
+            "laboratory_equipment_adequate": ask_question("Laboratory Equipment", "f2"),
+            "classroom_space_adequate": ask_question("Classrooms/Lecture Theatres", "f3"),
+            "classroom_equipment_adequate": ask_question("Classroom Equipment", "f4"),
+            "office_accommodation_adequate": ask_question("Office Accommodation", "f5"),
+            "safety_environment_present": ask_question("Safety and Environmental Sanitation", "f6"),
         }
 
     with tab4:
         library = {
-            "library_holdings_adequate": ask_question("Library holdings are adequate", "l1"),
-            "library_material_current": ask_question("Currency of holdings is satisfactory", "l2"),
-            "e_library_subscription_available": ask_question("Subscription to e-books and e-journals is satisfactory", "l3"),
-            "e_library_access_good": ask_question("Access to available e-books and e-journals is satisfactory", "l4"),
+            "library_holdings_adequate": ask_question("Library Holdings", "l1"),
+            "library_material_current": ask_question("Currency of Holdings", "l2"),
+            "e_library_subscription_available": ask_question("Subscription to e-Books and e-Journals", "l3"),
+            "e_library_access_good": ask_question("Access to available e-Books and e-Journals", "l4"),
         }
 
     with tab5:
-        funding_amount = st.number_input(
-            "How much funding is allocated to the programme yearly? (₦)",
-            min_value=0.0,
-            value=None,
-            placeholder="Enter amount"
-        )
-
-        funding_band = st.selectbox(
-            "Overall funding adequacy",
-            ["Adequate", "Moderately Adequate", "Inadequate"],
-            index=None,
-            placeholder="Select funding adequacy"
-        )
-
-        funding_map = {
-            "Adequate": 1.0,
-            "Moderately Adequate": 0.5,
-            "Inadequate": 0.0,
-        }
-
         funding = {
-            "programme_funding_adequate": funding_map[funding_band] if funding_band is not None else None,
-            "budget_release_regular": ask_question("Budget release is regular", "fd1"),
-            "equipment_maintenance_budget_available": ask_question("Equipment maintenance budget is available", "fd2"),
+            "programme_funding_adequate": ask_question("Funding", "fd0"),
+            "budget_release_regular": 1.0,
+            "equipment_maintenance_budget_available": 1.0,
         }
 
-        research = {
-            "research_collaboration_active": ask_question("Research and collaboration activities are satisfactory", "r1"),
-            "research_output_present": ask_question("Research output is satisfactory", "r2"),
-            "employer_rating_positive": ask_question("Employers’ rating is satisfactory", "r3"),
-            "tracer_study_available": ask_question("Tracer study evidence is available", "r4"),
+    with tab6:
+        research_collaboration = {
+            "research_collaboration_active": ask_question("Research and Collaboration", "r1"),
+            "research_output_present": 1.0,
+        }
+
+    with tab7:
+        tracer_rating = {
+            "employer_rating_positive": ask_question("Tracer and Employers’ Rating", "t1"),
+            "tracer_study_available": 1.0,
         }
 
     academic_score = calc_score(academic)
@@ -2955,16 +2934,8 @@ if st.session_state.page == "New Assessment":
     physical_facilities_score = calc_score(facilities)
     library_score = calc_score(library)
     funding_score = calc_score(funding)
-
-    research_collaboration_score = calc_score({
-        "research_collaboration_active": research["research_collaboration_active"],
-        "research_output_present": research["research_output_present"]
-    })
-
-    tracer_employers_score = calc_score({
-        "employer_rating_positive": research["employer_rating_positive"],
-        "tracer_study_available": research["tracer_study_available"]
-    })
+    research_collaboration_score = calc_score(research_collaboration)
+    tracer_employers_score = calc_score(tracer_rating)
 
     if all(v is not None for v in [
         academic_score, staffing_score, physical_facilities_score,
@@ -2983,41 +2954,16 @@ if st.session_state.page == "New Assessment":
     else:
         self_study_score = None
 
-    st.subheader("Section Scores")
-
-    row1 = st.columns(4)
-    row2 = st.columns(4)
-
-    with row1[0]:
-        display_score_card("Academic Content", academic_score)
-    with row1[1]:
-        display_score_card("Staffing", staffing_score)
-    with row1[2]:
-        display_score_card("Physical Facilities", physical_facilities_score)
-    with row1[3]:
-        display_score_card("Library", library_score)
-
-    with row2[0]:
-        display_score_card("Funding", funding_score)
-    with row2[1]:
-        display_score_card("Research & Collaboration", research_collaboration_score)
-    with row2[2]:
-        display_score_card("Tracer & Employers’ Rating", tracer_employers_score)
-    with row2[3]:
-        display_score_card("Total (Self Study Score)", self_study_score)
+    st.subheader("Predict Accreditation Status")
 
     required_basic = inputs_complete([institution, discipline, programme])
-    required_all_sections = all([
-        calc_score(academic) is not None,
-        calc_score(staffing_display_items) is not None,
-        calc_score(facilities) is not None,
-        calc_score(library) is not None,
-        calc_score(funding) is not None,
-        research_collaboration_score is not None,
-        tracer_employers_score is not None,
+    required_all_sections = all(v is not None for v in [
+        academic_score, staffing_score, physical_facilities_score,
+        library_score, funding_score, research_collaboration_score,
+        tracer_employers_score, self_study_score
     ])
 
-    if st.button("Generate Accreditation Decision and Advisory", type="primary", use_container_width=True):
+    if st.button("Predict Accreditation Status", type="primary", use_container_width=True):
         if not required_basic:
             st.error("Please complete the institutional information section.")
             st.stop()
@@ -3026,7 +2972,7 @@ if st.session_state.page == "New Assessment":
             st.error("Please complete all staffing and enrollment inputs.")
             st.stop()
 
-        if not required_all_sections or self_study_score is None:
+        if not required_all_sections:
             st.error("Please complete all assessment sections before generating the result.")
             st.stop()
 
@@ -3036,7 +2982,8 @@ if st.session_state.page == "New Assessment":
         input_data.update(facilities)
         input_data.update(library)
         input_data.update(funding)
-        input_data.update(research)
+        input_data.update(research_collaboration)
+        input_data.update(tracer_rating)
         input_data["staff_student_ratio_compliant"] = staff_ratio_feature
         input_data["discipline"] = discipline
 
@@ -3046,6 +2993,29 @@ if st.session_state.page == "New Assessment":
 
         prediction = model.predict(input_encoded)
         predicted_status = label_encoder.inverse_transform(prediction)[0]
+
+        st.subheader("Section Scores")
+
+        row1 = st.columns(4)
+        row2 = st.columns(4)
+
+        with row1[0]:
+            display_score_card("Academic Content", academic_score)
+        with row1[1]:
+            display_score_card("Staffing", staffing_score)
+        with row1[2]:
+            display_score_card("Physical Facilities", physical_facilities_score)
+        with row1[3]:
+            display_score_card("Library", library_score)
+
+        with row2[0]:
+            display_score_card("Funding", funding_score)
+        with row2[1]:
+            display_score_card("Research and Collaboration", research_collaboration_score)
+        with row2[2]:
+            display_score_card("Tracer and Employers’ Rating", tracer_employers_score)
+        with row2[3]:
+            display_score_card("Programme Score", self_study_score)
 
         st.subheader("Predicted Accreditation Outcome")
         st.success(predicted_status)
@@ -3148,7 +3118,7 @@ elif st.session_state.page == "Report History":
         for _, row in df_reports.iterrows():
             title = f"{row['institution_name']} | {row['programme_name']} | {row['predicted_status']} | {row['created_at']}"
             with st.expander(title):
-                st.write(f"**Self Study Score:** {row['self_study_score']:.2f}%")
+                st.write(f"**Programme Score:** {row['self_study_score']:.2f}%")
                 st.markdown(f'<div class="report-box">{row["report_text"]}</div>', unsafe_allow_html=True)
 
 # =========================================================
@@ -3167,9 +3137,9 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.user.get("r
         st.metric("Total Assessments", len(assessments_df))
     with d3:
         if not assessments_df.empty:
-            st.metric("Average Self Study Score", f"{assessments_df['self_study_score'].mean():.2f}%")
+            st.metric("Average Programme Score", f"{assessments_df['self_study_score'].mean():.2f}%")
         else:
-            st.metric("Average Self Study Score", "0.00%")
+            st.metric("Average Programme Score", "0.00%")
 
     st.subheader("Users")
     st.dataframe(users_df, use_container_width=True)
