@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="360" viewBox="0 0 520 360" role="img" aria-label="No saved assessments illustration">
+  <rect width="520" height="360" rx="16" fill="#f4f7f9"/>
+  <rect x="130" y="64" width="260" height="220" rx="12" fill="#ffffff" stroke="#d9e2ea" stroke-width="4"/>
+  <rect x="174" y="110" width="172" height="16" rx="8" fill="#d9e2ea"/>
+  <rect x="174" y="152" width="128" height="16" rx="8" fill="#d9e2ea"/>
+  <rect x="174" y="194" width="156" height="16" rx="8" fill="#d9e2ea"/>
+  <circle cx="360" cy="242" r="46" fill="#0f6b4f"/>
+  <path d="M360 222v40M340 242h40" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M122 306h276" stroke="#c9a227" stroke-width="8" stroke-linecap="round"/>
+</svg>

@@ -4,3 +4,7 @@ numpy
 scikit-learn
 joblib
 openai
+bcrypt
+pypdf
+python-docx
+openpyxl

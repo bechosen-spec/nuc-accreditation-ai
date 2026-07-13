@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160" role="img" aria-label="Accreditation readiness logo">
+  <rect width="240" height="160" rx="18" fill="#f7fafc"/>
+  <path d="M120 24 38 58l82 34 82-34-82-34Z" fill="#0b1f3a"/>
+  <path d="M74 78v24c0 18 92 18 92 0V78l-46 19-46-19Z" fill="#0f6b4f"/>
+  <path d="M166 70v30" stroke="#c9a227" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="166" cy="108" r="8" fill="#c9a227"/>
+  <rect x="84" y="96" width="72" height="40" rx="7" fill="#ffffff" stroke="#d9e2ea" stroke-width="3"/>
+  <path d="m99 117 13 12 28-30" fill="none" stroke="#0f6b4f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

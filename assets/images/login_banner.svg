@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-label="Modern university campus illustration">
+  <rect width="900" height="520" rx="18" fill="#eef4f7"/>
+  <rect y="374" width="900" height="146" fill="#dfe9e7"/>
+  <path d="M90 376h720" stroke="#c9a227" stroke-width="8" stroke-linecap="round"/>
+  <rect x="152" y="170" width="596" height="206" rx="8" fill="#ffffff" stroke="#d9e2ea" stroke-width="4"/>
+  <rect x="204" y="116" width="492" height="72" rx="6" fill="#0b1f3a"/>
+  <path d="M450 70 170 170h560L450 70Z" fill="#123a63"/>
+  <rect x="224" y="222" width="76" height="154" fill="#f7fafc" stroke="#d9e2ea" stroke-width="3"/>
+  <rect x="344" y="222" width="76" height="154" fill="#f7fafc" stroke="#d9e2ea" stroke-width="3"/>
+  <rect x="480" y="222" width="76" height="154" fill="#f7fafc" stroke="#d9e2ea" stroke-width="3"/>
+  <rect x="600" y="222" width="76" height="154" fill="#f7fafc" stroke="#d9e2ea" stroke-width="3"/>
+  <rect x="405" y="292" width="90" height="84" rx="4" fill="#0f6b4f"/>
+  <circle cx="742" cy="112" r="36" fill="#c9a227" opacity=".85"/>
+  <path d="M112 410c58-50 104-44 154 0M634 410c52-46 98-48 154 0" stroke="#0f6b4f" stroke-width="12" stroke-linecap="round" fill="none"/>
+</svg>

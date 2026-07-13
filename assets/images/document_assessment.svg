@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" viewBox="0 0 760 420" role="img" aria-label="Computing document assessment">
+  <rect width="760" height="420" rx="16" fill="#eef4f7"/>
+  <rect x="122" y="74" width="236" height="284" rx="14" fill="#ffffff" stroke="#d9e2ea" stroke-width="4"/>
+  <path d="M302 74v72h56" fill="#f4f7f9" stroke="#d9e2ea" stroke-width="4"/>
+  <rect x="164" y="152" width="132" height="16" rx="8" fill="#123a63"/>
+  <rect x="164" y="196" width="150" height="14" rx="7" fill="#d9e2ea"/>
+  <rect x="164" y="230" width="104" height="14" rx="7" fill="#d9e2ea"/>
+  <rect x="164" y="264" width="124" height="14" rx="7" fill="#c9a227"/>
+  <circle cx="510" cy="214" r="92" fill="#0b1f3a"/>
+  <circle cx="510" cy="214" r="54" fill="#0f6b4f"/>
+  <path d="M510 118v48M510 262v48M414 214h48M558 214h48M442 146l34 34M544 248l34 34M578 146l-34 34M476 248l-34 34" stroke="#c9a227" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="510" cy="214" r="20" fill="#ffffff"/>
+</svg>

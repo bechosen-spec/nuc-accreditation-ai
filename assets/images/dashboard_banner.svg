@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-label="Education dashboard banner">
+  <rect width="900" height="520" rx="18" fill="#0b1f3a"/>
+  <path d="M0 384c150-64 287-72 412-24s278 50 488-38v198H0V384Z" fill="#0f6b4f"/>
+  <rect x="86" y="92" width="290" height="230" rx="12" fill="#ffffff"/>
+  <rect x="122" y="132" width="150" height="18" rx="9" fill="#123a63"/>
+  <rect x="122" y="178" width="212" height="16" rx="8" fill="#d9e2ea"/>
+  <rect x="122" y="215" width="174" height="16" rx="8" fill="#d9e2ea"/>
+  <rect x="122" y="252" width="104" height="16" rx="8" fill="#c9a227"/>
+  <rect x="464" y="122" width="114" height="184" rx="8" fill="#ffffff" opacity=".95"/>
+  <rect x="614" y="78" width="114" height="228" rx="8" fill="#ffffff" opacity=".95"/>
+  <rect x="502" y="238" width="38" height="68" fill="#0f6b4f"/>
+  <rect x="652" y="158" width="38" height="148" fill="#c9a227"/>
+  <path d="M464 354h306" stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity=".85"/>
+  <path d="M514 384h206" stroke="#c9a227" stroke-width="8" stroke-linecap="round"/>
+</svg>
