@@ -1679,6 +1679,7 @@ import json
 import sqlite3
 import hashlib
 import hmac
+import os
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from html import escape
@@ -1687,16 +1688,23 @@ from pathlib import Path
 
 import streamlit as st
 import pandas as pd
-from openai import OpenAI
-
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier
 
 from config.computing_requirements import COMPUTING_PROGRAMMES, COMPUTING_RULES, DOCUMENT_CATEGORIES
 from config.institutions import KNOWN_INSTITUTIONS
 from services.document_parser import read_uploaded_file
 from services.institution_extractor import extract_institution_name, institution_is_resolved
+from accreditation_reporting import build_deterministic_report, generate_findings
+from assessment_rules import (
+    ACADEMIC_MATTERS,
+    CORE_CATEGORIES,
+    SCORING_POLICY_VERSION,
+    SECTION_MAX,
+    TOTAL_MAX_SCORE,
+    calculate_funding_score,
+    determine_accreditation_status,
+    format_percentage,
+    score_percentage,
+)
 
 try:
     import bcrypt
@@ -1717,7 +1725,7 @@ except ImportError:
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="NUC Accreditation Prediction System",
+    page_title="NUC Accreditation Readiness System",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1929,7 +1937,7 @@ st.markdown("""
 # =========================================================
 # DATABASE
 # =========================================================
-DB_PATH = "nuc_app.db"
+DB_PATH = os.environ.get("NUC_DB_PATH", "nuc_app.db")
 
 
 def get_conn():
@@ -1978,8 +1986,8 @@ def init_db():
             "programme_score": "REAL",
             "assessment_type": "TEXT DEFAULT 'standard_manual'",
             "rule_based_status": "TEXT",
-            "model_name": "TEXT DEFAULT 'RandomForestClassifier'",
-            "model_version": "TEXT DEFAULT 'rf-2026-07-13'",
+            "model_name": "TEXT DEFAULT 'DeterministicCoreRules'",
+            "model_version": "TEXT DEFAULT 'nuc-core-rules-v2'",
             "ml_confidence": "REAL",
             "extraction_summary": "TEXT",
             "institution_evidence": "TEXT",
@@ -1990,6 +1998,7 @@ def init_db():
             "evidence_coverage": "REAL",
             "total_points": "REAL",
             "updated_at": "TEXT",
+            "scoring_policy_version": "TEXT DEFAULT 'legacy-v1'",
         }
         for column, ddl in migrations.items():
             if column not in existing_cols:
@@ -2100,7 +2109,8 @@ def save_assessment(user_id: int, institution: str, discipline: str, programme: 
                     institution_evidence: str = None, extracted_institution_value: str = None,
                     confirmed_institution_value: str = None,
                     institution_corrected_by_user: bool = False,
-                    institution_correction_timestamp: str = None):
+                    institution_correction_timestamp: str = None,
+                    scoring_policy_version: str = SCORING_POLICY_VERSION):
     conn = get_conn()
     cur = conn.cursor()
     created_at = datetime.utcnow().isoformat()
@@ -2112,17 +2122,19 @@ def save_assessment(user_id: int, institution: str, discipline: str, programme: 
         "extraction_summary", "institution_evidence", "extracted_institution_value",
         "confirmed_institution_value", "institution_corrected_by_user",
         "institution_correction_timestamp", "evidence_coverage", "total_points", "updated_at",
+        "scoring_policy_version",
     ]
     values = [
         user_id, institution, discipline, programme,
         programme_score, predicted_status, actual_ratio, core_pct, phd_pct,
         created_at, assessment_payload, report_text, assessment_type,
         rule_based_status or predicted_status,
-        "RandomForestClassifier", "rf-2026-07-13", ml_confidence,
+        "DeterministicCoreRules", scoring_policy_version, ml_confidence,
         extraction_summary, institution_evidence, extracted_institution_value,
         confirmed_institution_value or institution,
         int(bool(institution_corrected_by_user)), institution_correction_timestamp,
         evidence_coverage, total_points, created_at,
+        scoring_policy_version,
     ]
 
     cur.execute("PRAGMA table_info(assessments)")
@@ -2146,7 +2158,7 @@ def get_user_assessments(user_id: int):
         """
         SELECT id, institution_name, discipline, programme_name,
                assessment_type, total_points, programme_score,
-               rule_based_status, predicted_status, ml_confidence,
+               COALESCE(rule_based_status, predicted_status) AS accreditation_status,
                evidence_coverage, actual_ratio, core_pct, phd_pct, created_at
         FROM assessments
         WHERE user_id = ?
@@ -2164,8 +2176,9 @@ def get_user_report_history(user_id: int):
     df = pd.read_sql_query(
         """
         SELECT id, institution_name, discipline, programme_name,
-               assessment_type, rule_based_status, predicted_status,
-               programme_score, ml_confidence, evidence_coverage,
+               assessment_type,
+               COALESCE(rule_based_status, predicted_status) AS accreditation_status,
+               programme_score, evidence_coverage,
                created_at, report_text, assessment_payload
         FROM assessments
         WHERE user_id = ?
@@ -2197,8 +2210,9 @@ def get_all_assessments():
     df = pd.read_sql_query(
         """
         SELECT id, user_id, institution_name, discipline, programme_name,
-               assessment_type, total_points, programme_score, rule_based_status,
-               predicted_status, ml_confidence, evidence_coverage, extraction_summary, created_at
+               assessment_type, total_points, programme_score,
+               COALESCE(rule_based_status, predicted_status) AS accreditation_status,
+               evidence_coverage, extraction_summary, created_at
         FROM assessments
         ORDER BY datetime(created_at) DESC
         """,
@@ -2206,98 +2220,6 @@ def get_all_assessments():
     )
     conn.close()
     return df
-
-# =========================================================
-# MODEL TRAINING
-# =========================================================
-@st.cache_resource
-def train_random_forest():
-    df = pd.read_csv("nuc_dataset_22150_questionnaire_full.csv")
-
-    target = "actual_accreditation_status"
-    drop_cols = [
-        "programme_id",
-        "institution_name",
-        "programme_name",
-        "self_study_score",
-        "academic_score",
-        "staffing_score",
-        "physical_facilities_score",
-        "library_score",
-        "funding_score",
-        "research_score",
-        "programme_score",
-        target,
-    ]
-
-    X = df.drop(columns=drop_cols, errors="ignore")
-    y = df[target]
-
-    le = LabelEncoder()
-    y = le.fit_transform(y)
-
-    X = pd.get_dummies(X, drop_first=True)
-    training_columns = X.columns
-
-    X_train, _, y_train, _ = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-
-    rf = RandomForestClassifier(
-        n_estimators=300,
-        random_state=42,
-        class_weight="balanced",
-        n_jobs=-1,
-    )
-    rf.fit(X_train, y_train)
-    metadata = {
-        "model_name": "RandomForestClassifier",
-        "model_version": "rf-2026-07-13",
-        "training_date": datetime.utcnow().date().isoformat(),
-        "classes": list(le.classes_),
-    }
-    return rf, le, training_columns, metadata
-
-
-def load_random_forest():
-    return train_random_forest()
-
-
-def prepare_model_input(input_data: dict, training_columns):
-    input_df = pd.DataFrame([input_data])
-    input_encoded = pd.get_dummies(input_df)
-    return input_encoded.reindex(columns=training_columns, fill_value=0)
-
-
-def validate_model_features(input_encoded, training_columns):
-    return list(input_encoded.columns) == list(training_columns)
-
-
-def predict_accreditation(model, label_encoder, input_encoded):
-    prediction = model.predict(input_encoded)
-    return label_encoder.inverse_transform(prediction)[0]
-
-
-def predict_probabilities(model, label_encoder, input_encoded):
-    probabilities = model.predict_proba(input_encoded)[0]
-    return {
-        label: float(probabilities[idx])
-        for idx, label in enumerate(label_encoder.classes_)
-    }
-
-
-model, label_encoder, training_columns, model_metadata = load_random_forest()
-
-# =========================================================
-# OPENAI CLIENT
-# =========================================================
-client = None
-if "OPENAI_API_KEY" in st.secrets:
-    clean_key = st.secrets["OPENAI_API_KEY"]
-    clean_key = clean_key.replace("\u200b", "").strip()
-    clean_key = re.sub(r"[^\x00-\x7F]+", "", clean_key)
-    if clean_key:
-        client = OpenAI(api_key=clean_key)
 
 # =========================================================
 # SESSION STATE
@@ -2424,20 +2346,6 @@ discipline_programmes = {
 }
 
 disciplines = list(discipline_programmes.keys())
-
-# =========================================================
-# SECTION MAXIMUMS
-# =========================================================
-SECTION_MAX = {
-    "Academic Content": 37,
-    "Staffing": 35,
-    "Physical Facilities": 27,
-    "Library": 18,
-    "Funding": 3,
-    "Research and Collaboration": 3,
-    "Tracer and Employers’ Rating": 3,
-}
-TOTAL_MAX_SCORE = 125
 
 # =========================================================
 # QUESTION OPTION BANKS
@@ -2622,9 +2530,10 @@ TRACER_OPTIONS = [
 ]
 
 TRACER_NO_GRAD_OPTIONS = [
-    {"label": "Very good", "score": 1.0},
-    {"label": "Average", "score": 0.5},
-    {"label": "Below average", "score": 0.0},
+    {
+        "label": "Not yet assessable because the programme has no graduates",
+        "score": None,
+    },
 ]
 
 # =========================================================
@@ -2652,26 +2561,11 @@ def pct(numerator: int, denominator: int) -> float:
 
 
 def display_score_card(title: str, points, max_points: float):
-    if points is None:
-        text = "—"
-    else:
-        text = f"{points:.2f} / {max_points}"
+    text = format_percentage(points, max_points)
     st.markdown(
         f'<div class="score-card"><h4>{title}</h4><h2>{text}</h2></div>',
         unsafe_allow_html=True
     )
-
-
-def get_feature_importance(_model, _training_columns):
-    try:
-        importances = _model.feature_importances_
-    except Exception:
-        return pd.DataFrame(columns=["feature", "importance"])
-
-    return pd.DataFrame({
-        "feature": _training_columns,
-        "importance": importances
-    }).sort_values(by="importance", ascending=False)
 
 
 def inputs_complete(values):
@@ -2688,23 +2582,22 @@ def compute_section_points(responses: dict, max_points: float):
 def classify_funding_amount(amount):
     if amount is None:
         return None, None
-    if amount >= 50_000_000:
-        return "Very adequate", 1.0
-    if amount >= 20_000_000:
-        return "Adequate", 0.66
-    if amount >= 5_000_000:
-        return "Inadequate", 0.33
-    return "Poor", 0.0
+    points = calculate_funding_score(amount)
+    if points == 1:
+        label = "Below ₦300,000"
+    elif points == 2:
+        label = "₦300,000 to below ₦1,000,000"
+    else:
+        label = "₦1,000,000 and above"
+    # The form stores normalized responses; compute_section_points converts this
+    # value back to the authoritative 0–3 section points.
+    return label, points / SECTION_MAX["Funding"]
 
 
-def determine_nuc_status(programme_score):
-    if programme_score is None:
-        return "UNDETERMINED"
-    if programme_score >= 70:
-        return "FULL"
-    if programme_score >= 60:
-        return "INTERIM"
-    return "DENIED"
+def determine_nuc_status(core_percentages):
+    """Compatibility wrapper for the deterministic four-core-category rule."""
+
+    return determine_accreditation_status(core_percentages)
 
 
 @dataclass
@@ -2839,10 +2732,6 @@ def evidence_coverage(evidence):
         return 0.0
     resolved = [item for item in evidence.values() if item.status == "confirmed" and item.extracted_value is not None]
     return round((len(resolved) / len(evidence)) * 100, 2)
-
-
-def build_model_input_from_scores(base_inputs):
-    return prepare_model_input(base_inputs, training_columns)
 
 
 def keyword_score(parsed_docs, keywords, label):
@@ -3096,7 +2985,7 @@ def render_computing_document_assessment():
         and has_graduated_students
     )
     if not mandatory_complete:
-        st.warning("Resolve all mandatory staffing/enrolment fields, programme identity and institution identity before prediction.")
+        st.warning("Resolve all mandatory staffing/enrolment fields, programme identity and institution identity before assessment.")
         return
 
     ratio_score_raw, actual_ratio, staff_ratio_feature, ratio_max = score_staff_student_ratio(
@@ -3123,7 +3012,7 @@ def render_computing_document_assessment():
         resolved_values["non_academic_staff_development_count"], resolved_values["non_teaching_staff_count"]
     )
 
-    academic_score, academic_note = keyword_score(parsed_docs, ["curriculum", "ccmas", "academic regulations", "examination"], "Academic content")
+    academic_score, academic_note = keyword_score(parsed_docs, ["curriculum", "ccmas", "academic regulations", "examination"], ACADEMIC_MATTERS)
     facility_score, facility_note = keyword_score(parsed_docs, ["laboratory", "equipment", "internet", "power backup"], "Physical facilities")
     library_score, library_note = keyword_score(parsed_docs, ["library", "e-library", "journal", "database"], "Library")
     funding_score_value, funding_note = keyword_score(parsed_docs, ["funding", "budget", "release"], "Funding")
@@ -3131,12 +3020,12 @@ def render_computing_document_assessment():
     tracer_score_value, tracer_note = keyword_score(parsed_docs, ["tracer", "employer", "graduate"], "Tracer and employer rating")
 
     inferred_scores = {
-        "Academic Content": academic_score,
+        ACADEMIC_MATTERS: academic_score,
         "Physical Facilities": facility_score,
         "Library": library_score,
         "Funding": funding_score_value,
         "Research and Collaboration": research_score_value,
-        "Tracer and Employers’ Rating": tracer_score_value,
+        "Tracer and Employers' Rating": tracer_score_value,
     }
     unresolved_sections = [name for name, score in inferred_scores.items() if score is None]
     section_overrides = {}
@@ -3151,7 +3040,7 @@ def render_computing_document_assessment():
                 key=f"doc_section_{section_name}",
             )
         if any(value is None for value in section_overrides.values()):
-            st.warning("Resolve unsupported section evidence before prediction. Absence of evidence is not treated as compliance.")
+            st.warning("Resolve unsupported section evidence before assessment. Absence of evidence is not treated as compliance.")
             return
 
     for section_name, choice in section_overrides.items():
@@ -3168,32 +3057,36 @@ def render_computing_document_assessment():
     total_staffing_max = ratio_max + core_max + mix_max + phd_max + non_teach_max + acad_dev_max + non_acad_dev_max
     staffing_points = (total_staffing_raw / total_staffing_max) * SECTION_MAX["Staffing"]
     section_scores = {
-        "Academic Content": inferred_scores["Academic Content"] * SECTION_MAX["Academic Content"],
+        ACADEMIC_MATTERS: inferred_scores[ACADEMIC_MATTERS] * SECTION_MAX[ACADEMIC_MATTERS],
         "Staffing": staffing_points,
         "Physical Facilities": inferred_scores["Physical Facilities"] * SECTION_MAX["Physical Facilities"],
         "Library": inferred_scores["Library"] * SECTION_MAX["Library"],
         "Funding": inferred_scores["Funding"] * SECTION_MAX["Funding"],
         "Research and Collaboration": inferred_scores["Research and Collaboration"] * SECTION_MAX["Research and Collaboration"],
-        "Tracer and Employers’ Rating": inferred_scores["Tracer and Employers’ Rating"] * SECTION_MAX["Tracer and Employers’ Rating"],
+        "Tracer and Employers' Rating": inferred_scores["Tracer and Employers' Rating"] * SECTION_MAX["Tracer and Employers' Rating"],
     }
     total_points = sum(section_scores.values())
     programme_score = (total_points / TOTAL_MAX_SCORE) * 100
-    rule_based_status = determine_nuc_status(programme_score)
+    document_core_percentages = {
+        name: score_percentage(section_scores[name], SECTION_MAX[name])
+        for name in CORE_CATEGORIES
+    }
+    rule_based_status = determine_nuc_status(document_core_percentages)
 
     input_data = {
-        "curriculum_aligned_with_BMAS": inferred_scores["Academic Content"],
-        "innovative_courses_present": inferred_scores["Academic Content"],
-        "curriculum_coverage_complete": inferred_scores["Academic Content"],
-        "admission_requirements_compliant": inferred_scores["Academic Content"],
-        "academic_regulations_defined": inferred_scores["Academic Content"],
-        "tests_and_examinations_standardized": inferred_scores["Academic Content"],
-        "evaluation_methods_clear": inferred_scores["Academic Content"],
-        "degree_projects_adequate": inferred_scores["Academic Content"],
-        "practical_work_adequate": inferred_scores["Academic Content"],
-        "student_course_evaluation_present": inferred_scores["Academic Content"],
-        "skills_acquisition_programme": inferred_scores["Academic Content"],
-        "external_examiner_system": inferred_scores["Academic Content"],
-        "internal_quality_assurance": inferred_scores["Academic Content"],
+        "curriculum_aligned_with_BMAS": inferred_scores[ACADEMIC_MATTERS],
+        "innovative_courses_present": inferred_scores[ACADEMIC_MATTERS],
+        "curriculum_coverage_complete": inferred_scores[ACADEMIC_MATTERS],
+        "admission_requirements_compliant": inferred_scores[ACADEMIC_MATTERS],
+        "academic_regulations_defined": inferred_scores[ACADEMIC_MATTERS],
+        "tests_and_examinations_standardized": inferred_scores[ACADEMIC_MATTERS],
+        "evaluation_methods_clear": inferred_scores[ACADEMIC_MATTERS],
+        "degree_projects_adequate": inferred_scores[ACADEMIC_MATTERS],
+        "practical_work_adequate": inferred_scores[ACADEMIC_MATTERS],
+        "student_course_evaluation_present": inferred_scores[ACADEMIC_MATTERS],
+        "skills_acquisition_programme": inferred_scores[ACADEMIC_MATTERS],
+        "external_examiner_system": inferred_scores[ACADEMIC_MATTERS],
+        "internal_quality_assurance": inferred_scores[ACADEMIC_MATTERS],
         "staff_student_ratio_compliant": staff_ratio_feature,
         "proportion_core_staff_sufficient": core_staff_feature,
         "staff_rank_mix_balanced": staff_mix_feature,
@@ -3216,16 +3109,12 @@ def render_computing_document_assessment():
         "programme_funding_adequate": inferred_scores["Funding"],
         "research_collaboration_active": inferred_scores["Research and Collaboration"],
         "research_output_present": inferred_scores["Research and Collaboration"],
-        "employer_rating_positive": inferred_scores["Tracer and Employers’ Rating"],
-        "tracer_study_available": inferred_scores["Tracer and Employers’ Rating"],
+        "employer_rating_positive": inferred_scores["Tracer and Employers' Rating"],
+        "tracer_study_available": inferred_scores["Tracer and Employers' Rating"],
         "discipline": "Computing",
     }
 
-    if st.button("Predict and Generate Computing Report", type="primary", width="stretch"):
-        input_encoded = prepare_model_input(input_data, training_columns)
-        model_status = predict_accreditation(model, label_encoder, input_encoded)
-        probabilities = predict_probabilities(model, label_encoder, input_encoded)
-        ml_confidence = probabilities.get(model_status, 0.0)
+    if st.button("Generate Computing Accreditation Report", type="primary", width="stretch"):
         computing_findings = evaluate_computing_rules(
             resolved_values,
             {"actual_ratio": actual_ratio, "phd_pct": phd_pct, "mix_pct_dict": mix_pct_dict},
@@ -3233,45 +3122,33 @@ def render_computing_document_assessment():
         notes = [academic_note, facility_note, library_note, funding_note, research_note, tracer_note]
         missing_fields = [item.field_name for item in groups["missing"]]
         conflicting_fields = [item.field_name for item in groups["conflicting"]]
-        weaknesses = [
-            name for name, score in section_scores.items()
-            if score < (SECTION_MAX[name] * 0.6)
-        ] + computing_findings
+        criterion_responses = {
+            name: {"document_evidence": inferred_scores.get(name)}
+            for name in inferred_scores
+        }
+        criterion_responses["Assessment Evidence"] = {
+            field: None for field in missing_fields + conflicting_fields
+        }
+        deterministic_findings = generate_findings(section_scores, criterion_responses)
+        report = build_deterministic_report(
+            institution=institution,
+            discipline="Computing",
+            programme=programme,
+            programme_score=programme_score,
+            accreditation_status=rule_based_status,
+            section_scores=section_scores,
+            findings=deterministic_findings,
+        )
 
-        report = build_professional_report({
-            "institution": institution,
-            "discipline": "Computing",
-            "programme": programme,
-            "assessment_type": "computing_document",
-            "programme_score": programme_score,
-            "total_points": total_points,
-            "rule_based_status": rule_based_status,
-            "ml_predicted_status": model_status,
-            "ml_confidence": ml_confidence,
-            "probabilities": probabilities,
-            "evidence_coverage": coverage,
-            "section_scores": section_scores,
-            "weaknesses": weaknesses + notes,
-            "missing_fields": missing_fields,
-            "conflicting_fields": conflicting_fields,
-            "computing_findings": computing_findings,
-        })
-
-        st.subheader("Section Scores")
+        st.subheader("Accreditation Assessment Results")
         st.dataframe(pd.DataFrame([
-            {"Section": name, "Points": round(score, 2), "Maximum": SECTION_MAX[name]}
+            {"Section": name, "Percentage": f"{score_percentage(score, SECTION_MAX[name]):.2f}%"}
             for name, score in section_scores.items()
         ]), width="stretch")
-        st.subheader("Score-Based Readiness Classification")
-        st.success(rule_based_status)
-        st.subheader("Random Forest Prediction")
-        st.info(f"{model_status} ({ml_confidence:.1%} confidence)")
-        if model_status != rule_based_status:
-            st.warning("The machine-learning prediction and score-based readiness classification differ. Review the highlighted criteria, supporting evidence and unresolved information before relying on the result.")
-        else:
-            st.success("The Random Forest prediction agrees with the score-based classification.")
+        st.subheader("Accreditation Status")
+        st.success(f"{rule_based_status} ACCREDITATION")
 
-        st.subheader("Accreditation-Readiness Report")
+        st.subheader("Deficiencies and Recommended Remedies")
         st.markdown(report)
 
         payload = {
@@ -3281,8 +3158,9 @@ def render_computing_document_assessment():
             "field_evidence": {field: asdict(item) for field, item in evidence.items()},
             "institution_evidence": institution_evidence,
             "parsed_documents": parsed_docs,
-            "model_probabilities": probabilities,
             "computing_findings": computing_findings,
+            "scoring_policy_version": SCORING_POLICY_VERSION,
+            "accreditation_status": rule_based_status,
         }
         save_assessment(
             user_id=st.session_state.user["id"],
@@ -3290,7 +3168,7 @@ def render_computing_document_assessment():
             discipline="Computing",
             programme=programme,
             programme_score=float(programme_score),
-            predicted_status=model_status,
+            predicted_status=rule_based_status,
             actual_ratio=float(actual_ratio),
             core_pct=float(core_pct),
             phd_pct=float(phd_pct),
@@ -3298,7 +3176,7 @@ def render_computing_document_assessment():
             report_text=report,
             assessment_type="computing_document",
             rule_based_status=rule_based_status,
-            ml_confidence=float(ml_confidence),
+            ml_confidence=None,
             extraction_summary=json.dumps({
                 "files": [doc["file_name"] for doc in parsed_docs],
                 "coverage": coverage,
@@ -3318,7 +3196,10 @@ def render_computing_document_assessment():
         st.download_button("Download JSON Assessment Record", json.dumps(payload, indent=2), file_name="computing_assessment_record.json")
         st.download_button(
             "Download CSV Score Summary",
-            pd.DataFrame([{"section": k, "points": v, "maximum": SECTION_MAX[k]} for k, v in section_scores.items()]).to_csv(index=False),
+            pd.DataFrame([
+                {"section": k, "percentage": f"{score_percentage(v, SECTION_MAX[k]):.2f}%"}
+                for k, v in section_scores.items()
+            ]).to_csv(index=False),
             file_name="computing_score_summary.csv",
         )
 
@@ -3474,11 +3355,11 @@ def build_nuc_style_report(
     deficiencies: list,
     remedies: list,
 ):
-    deficiency_lines = "\n".join([f"{idx+1}. {item}" for idx, item in enumerate(deficiencies)]) if deficiencies else "Nil major deficiency identified."
-    remedy_lines = "\n".join([f"{idx+1}. {item}" for idx, item in enumerate(remedies)]) if remedies else "Maintain current standards."
+    deficiency_lines = "\n".join([f"{idx+1}. {item}" for idx, item in enumerate(deficiencies)]) if deficiencies else "No deficiency was identified from the recorded responses."
+    remedy_lines = "\n".join([f"{idx+1}. {item}" for idx, item in enumerate(remedies)]) if remedies else "Maintain current controls and supporting evidence."
 
     return f"""
-## SUMMARY OF PANEL'S REPORT
+## Accreditation Assessment Summary
 
 **DATE OF VISITATION:** {datetime.now().strftime("%d %B %Y")}  
 **UNIVERSITY:** {institution}  
@@ -3488,14 +3369,14 @@ def build_nuc_style_report(
 **PROGRAMME SCORE:** {programme_score:.2f}%  
 **ACCREDITATION STATUS:** {predicted_status}  
 
-### DEFICIENCIES
+### Deficiencies
 {deficiency_lines}
 
-### REMEDIES
+### Recommended Remedies
 {remedy_lines}
 
-## APPROVAL BY THE COMMISSION
-Based on further analysis of the report, the Commission upholds the recommendation of **{predicted_status}** accreditation status for the programme.
+## Advisory Disclaimer
+This readiness report does not represent approval or an official accreditation decision by the Commission.
 """.strip()
 
 
@@ -3524,90 +3405,21 @@ def evaluate_computing_rules(values, indicators):
 
 def build_professional_report(context):
     section_scores = context.get("section_scores", {})
-    section_lines = "\n".join(
-        f"- {name}: {score:.2f} / {SECTION_MAX.get(name, 0)}"
-        for name, score in section_scores.items()
-        if score is not None
-    )
-    weaknesses = context.get("weaknesses") or ["No major weakness was detected from resolved evidence."]
     missing = context.get("missing_fields") or []
     conflicts = context.get("conflicting_fields") or []
-    computing_findings = context.get("computing_findings") or []
-    agreement = (
-        "The score-based classification and Random Forest prediction agree."
-        if context["rule_based_status"] == context["ml_predicted_status"]
-        else "The machine-learning prediction and score-based readiness classification differ. Review the highlighted criteria, supporting evidence and unresolved information before relying on the result."
+    criterion_responses = {
+        "Assessment Evidence": {field: None for field in missing + conflicts}
+    }
+    findings = generate_findings(section_scores, criterion_responses)
+    return build_deterministic_report(
+        institution=context["institution"],
+        discipline=context["discipline"],
+        programme=context["programme"],
+        programme_score=context["programme_score"],
+        accreditation_status=context["rule_based_status"],
+        section_scores=section_scores,
+        findings=findings,
     )
-
-    return f"""
-## Assessment Identity
-- Institution: {context['institution']}
-- Discipline: {context['discipline']}
-- Programme: {context['programme']}
-- Assessment Type: {context['assessment_type']}
-
-## Executive Summary
-The programme has a readiness score of {context['programme_score']:.2f}% and a score-based classification of {context['rule_based_status']}. The Random Forest prediction is {context['ml_predicted_status']} with {context.get('ml_confidence', 0):.1%} confidence.
-
-## Assessment Method
-This advisory assessment combines NUC-style section scoring with a Random Forest model trained on structured accreditation data. It does not grant official NUC accreditation.
-
-## Evidence Coverage Summary
-Evidence coverage is {context.get('evidence_coverage', 100):.2f}%. Missing or unresolved evidence is listed below.
-
-## Section Scores
-{section_lines}
-
-## Total Points and Programme Score
-- Total Points: {context.get('total_points', 0):.2f} / {TOTAL_MAX_SCORE}
-- Programme Score: {context['programme_score']:.2f}%
-
-## Score-Based Classification
-{context['rule_based_status']}
-
-## Random Forest Prediction
-{context['ml_predicted_status']}
-
-## Prediction Confidence
-- FULL: {context.get('probabilities', {}).get('FULL', 0):.1%}
-- INTERIM: {context.get('probabilities', {}).get('INTERIM', 0):.1%}
-- DENIED: {context.get('probabilities', {}).get('DENIED', 0):.1%}
-
-## Agreement or Disagreement Analysis
-{agreement}
-
-## High-Impact Weaknesses
-{chr(10).join(f'- {item}' for item in weaknesses)}
-
-## Missing Evidence
-{chr(10).join(f'- {item}' for item in missing) if missing else '- No mandatory field remains missing.'}
-
-## Conflicting Evidence
-{chr(10).join(f'- {item}' for item in conflicts) if conflicts else '- No conflicting mandatory field remains unresolved.'}
-
-## Computing CCMAS Compliance Findings
-{chr(10).join(f'- {item}' for item in computing_findings) if computing_findings else '- No Computing-specific violation was detected from resolved fields.'}
-
-## Prioritised Recommendations
-{chr(10).join(f'- Resolve: {item}' for item in (weaknesses + missing + conflicts + computing_findings)[:8])}
-
-## Documentation Checklist
-- Self-study form
-- Curriculum and programme handbook
-- Staff list and CV summary
-- Course allocation and timetable
-- Laboratory and equipment inventory
-- Library and e-library evidence
-- Research, tracer-study and employer-feedback evidence
-
-## Accreditation-Readiness Action Plan
-- Resolve missing and conflicting evidence first.
-- Address criteria with low section scores before model-driven presentation improvements.
-- Re-run the assessment after evidence and staffing updates are documented.
-
-## Important Advisory Disclaimer
-This system provides advisory accreditation-readiness analysis only. Official NUC accreditation decisions can only be made by the appropriate regulatory process.
-""".strip()
 
 
 def generate_advisory_report(
@@ -3630,71 +3442,19 @@ def generate_advisory_report(
     non_acad_dev_score_raw: int,
     top_weaknesses: str,
 ):
-    if client is None:
-        deficiencies = [w.strip("- ").strip() for w in top_weaknesses.split("\n") if w.strip()]
-        remedies = [f"Improve {item.lower()} before the next accreditation exercise." for item in deficiencies[:5]]
-        return build_nuc_style_report(
-            institution=institution,
-            discipline=discipline,
-            programme=programme,
-            programme_score=programme_score,
-            predicted_status=predicted_status,
-            deficiencies=deficiencies[:5],
-            remedies=remedies
-        )
-
-    prompt = f"""
-You are an accreditation advisory expert.
-
-Write a report that mirrors the structure of an NUC accreditation summary report.
-
-Institution: {institution}
-Discipline: {discipline}
-Programme: {programme}
-Programme Score: {programme_score:.2f}%
-Predicted Accreditation Status: {predicted_status}
-
-Calculated staffing indicators:
-- Staff to Student Ratio: 1:{actual_ratio}
-- Staff to Student Ratio Score: {ratio_score_raw}/4
-- Core Staff Percentage: {core_pct:.2f}%
-- Core Staff Score: {core_score_raw}/6
-- Staff Mix by Rank Score: {mix_score_raw}/5
-- PhD Holders Percentage: {phd_pct:.2f}%
-- Qualifications of Teaching Staff Score: {phd_score_raw}/6
-- Academic Staff Development Percentage: {acad_dev_pct:.2f}%
-- Academic Staff Development Score: {acad_dev_score_raw}/5
-- Non-Teaching Staff Score: {non_teach_score_raw}/3
-- Non-Academic Staff Development Percentage: {non_acad_dev_pct:.2f}%
-- Non-Academic Staff Development Score: {non_acad_dev_score_raw}/2
-
-High-impact weaknesses:
-{top_weaknesses}
-
-Format the output exactly with these headings:
-## SUMMARY OF PANEL'S REPORT
-## DEFICIENCIES
-## REMEDIES
-## APPROVAL BY THE COMMISSION
-
-Requirements:
-- Make it read like an NUC report
-- Be brief, formal, and direct
-- List specific deficiencies
-- List matching remedies
-- State the accreditation status clearly
-- Do not add any closing offer for further help
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": "You are an accreditation advisory expert and must return a formal NUC-style accreditation summary report in markdown."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.4,
+    # Backward-compatible entry point retained for historical callers. It is
+    # deterministic and never calls an external service.
+    deficiencies = [w.strip("- ").strip() for w in top_weaknesses.split("\n") if w.strip()]
+    remedies = [f"Review and document corrective action for {item.lower()}." for item in deficiencies[:5]]
+    return build_nuc_style_report(
+        institution=institution,
+        discipline=discipline,
+        programme=programme,
+        programme_score=programme_score,
+        predicted_status=predicted_status,
+        deficiencies=deficiencies[:5],
+        remedies=remedies,
     )
-    return clean_report_text(response.choices[0].message.content)
 
 # =========================================================
 # AUTH PAGES
@@ -3771,7 +3531,7 @@ if st.session_state.user is None:
                 Assess programme readiness, analyse accreditation evidence and generate actionable reports.
             </p>
             <div class="benefit-item"><span class="benefit-dot"></span><span>Structured NUC-style assessment</span></div>
-            <div class="benefit-item"><span class="benefit-dot"></span><span>Random Forest readiness prediction</span></div>
+            <div class="benefit-item"><span class="benefit-dot"></span><span>Rule-based accreditation classification</span></div>
             <div class="benefit-item"><span class="benefit-dot"></span><span>Evidence-based advisory reporting</span></div>
             """,
             unsafe_allow_html=True,
@@ -3868,22 +3628,17 @@ if st.session_state.page == "Dashboard":
     first_name = st.session_state.user["full_name"].split()[0]
     page_intro(
         f"Welcome, {first_name}",
-        "Monitor programme readiness, review recent evidence, and move quickly into the next accreditation task.",
+        "Monitor programme accreditation readiness and track assessment progress.",
         "dashboard_banner.svg",
     )
 
-    q1, q2, q3 = st.columns(3)
+    q1, q2 = st.columns(2)
     with q1:
-        if st.button("Start Manual Assessment", type="primary", width="stretch"):
+        if st.button("Start Accreditation Assessment", type="primary", width="stretch"):
             st.session_state.assessment_route = "standard_manual"
             st.session_state.page = "New Assessment"
             st.rerun()
     with q2:
-        if st.button("Upload Computing Documents", width="stretch"):
-            st.session_state.assessment_route = "computing_document"
-            st.session_state.page = "New Assessment"
-            st.rerun()
-    with q3:
         if st.button("View Reports", width="stretch"):
             st.session_state.page = "Report History"
             st.rerun()
@@ -3892,11 +3647,11 @@ if st.session_state.page == "Dashboard":
         render_empty_state(
             "empty_assessments.svg",
             "No assessments yet",
-            "Start a manual questionnaire or upload Computing evidence documents to build your readiness history."
+            "Start a new accreditation assessment to evaluate programme performance and track accreditation readiness."
         )
     else:
         avg_score = df_assessments["programme_score"].dropna().mean()
-        latest_status = df_assessments.iloc[0]["rule_based_status"] or df_assessments.iloc[0]["predicted_status"]
+        latest_status = df_assessments.iloc[0]["accreditation_status"]
         incomplete_count = int(df_assessments["programme_score"].isna().sum())
         d1, d2, d3, d4, d5 = st.columns(5)
         d1.metric("Total Assessments", len(df_assessments))
@@ -3905,7 +3660,7 @@ if st.session_state.page == "Dashboard":
         d4.metric("Document Assessments", int((df_assessments["assessment_type"] == "computing_document").sum()))
         d5.metric("Incomplete", incomplete_count)
 
-        chart_data = df_assessments["rule_based_status"].fillna(df_assessments["predicted_status"]).value_counts()
+        chart_data = df_assessments["accreditation_status"].value_counts()
         if not chart_data.empty:
             st.subheader("FULL / INTERIM / DENIED Distribution")
             st.bar_chart(
@@ -3924,43 +3679,12 @@ if st.session_state.page == "Dashboard":
 elif st.session_state.page == "New Assessment":
     page_intro(
         "New Assessment",
-        "Choose a readiness workflow, then complete the required evidence and scoring steps.",
+        "Evaluate programme accreditation readiness using the required assessment criteria.",
         None,
     )
-    if "assessment_route" not in st.session_state:
-        st.session_state.assessment_route = None
-
-    if st.session_state.assessment_route is None:
-        card1, card2 = st.columns(2)
-        with card1:
-            render_assessment_card(
-                "Standard Manual Assessment",
-                "Questionnaire-based NUC readiness scoring for Computing, Education, Engineering, Management and Science programmes.",
-                "manual_assessment.svg",
-                "Start Manual Assessment",
-                "standard_manual",
-            )
-        with card2:
-            render_assessment_card(
-                "Computing Document Assessment",
-                "Upload Computing programme documents, review extracted evidence, resolve gaps, then predict readiness.",
-                "document_assessment.svg",
-                "Upload Computing Documents",
-                "computing_document",
-            )
-        st.stop()
-
-    top_left, top_right = st.columns([3, 1])
-    with top_left:
-        st.caption(f"Selected route: {st.session_state.assessment_route}")
-    with top_right:
-        if st.button("Change Assessment Type", width="stretch"):
-            st.session_state.assessment_route = None
-            st.rerun()
-
-    if st.session_state.assessment_route == "computing_document":
-        render_computing_document_assessment()
-        st.stop()
+    # Document upload is preserved in code and historical records but is
+    # intentionally not exposed in the active assessment workflow.
+    st.session_state.assessment_route = "standard_manual"
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -4063,13 +3787,13 @@ elif st.session_state.page == "New Assessment":
         st.info("Enter all staffing and enrollment figures to compute staffing indicators.")
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "Academic Content",
+        ACADEMIC_MATTERS,
         "Staffing",
         "Physical Facilities",
         "Library",
         "Funding",
         "Research and Collaboration",
-        "Tracer and Employers’ Rating",
+        "Tracer and Employers' Rating",
     ])
 
     with tab1:
@@ -4095,7 +3819,6 @@ elif st.session_state.page == "New Assessment":
             "staff_competence_verified": ask_scored_question("Competence of Teaching Staff", COMPETENCE_OPTIONS, "s1"),
             "administrative_support_available": ask_scored_question("Administration of College/School/Faculty/Department", ADMIN_OPTIONS, "s2"),
         }
-        st.info("Calculated staffing items are automatically derived from the figures entered above.")
 
     with tab3:
         facilities = {
@@ -4148,10 +3871,10 @@ elif st.session_state.page == "New Assessment":
             tracer_options = TRACER_NO_GRAD_OPTIONS
 
         tracer_rating = {
-            "employer_rating_positive": ask_scored_question("Tracer and Employers’ Rating", tracer_options, "t1") if tracer_options else None,
+            "employer_rating_positive": ask_scored_question("Tracer and Employers' Rating", tracer_options, "t1") if tracer_options else None,
         }
 
-    academic_points = compute_section_points(academic, SECTION_MAX["Academic Content"])
+    academic_points = compute_section_points(academic, SECTION_MAX[ACADEMIC_MATTERS])
 
     staffing_points = None
     if staffing_inputs_complete and all(v is not None for v in [
@@ -4180,7 +3903,7 @@ elif st.session_state.page == "New Assessment":
     library_points = compute_section_points(library, SECTION_MAX["Library"])
     funding_points = compute_section_points(funding, SECTION_MAX["Funding"])
     research_collaboration_points = compute_section_points(research_collaboration, SECTION_MAX["Research and Collaboration"])
-    tracer_points = compute_section_points(tracer_rating, SECTION_MAX["Tracer and Employers’ Rating"])
+    tracer_points = compute_section_points(tracer_rating, SECTION_MAX["Tracer and Employers' Rating"])
 
     if all(v is not None for v in [
         academic_points, staffing_points, physical_facilities_points,
@@ -4201,7 +3924,7 @@ elif st.session_state.page == "New Assessment":
         total_points = None
         programme_score = None
 
-    st.subheader("Predict Accreditation Status")
+    st.subheader("Generate Accreditation Assessment Results")
 
     required_basic = inputs_complete([institution, discipline, programme])
     required_all_sections = all(v is not None for v in [
@@ -4210,7 +3933,7 @@ elif st.session_state.page == "New Assessment":
         tracer_points, programme_score
     ])
 
-    if st.button("Predict Accreditation Status", type="primary", width="stretch"):
+    if st.button("Generate Accreditation Results", type="primary", width="stretch"):
         if not required_basic:
             st.error("Please complete the institutional information section.")
             st.stop()
@@ -4241,20 +3964,58 @@ elif st.session_state.page == "New Assessment":
         input_data["non_academic_staff_development_programme"] = non_acad_dev_feature
         input_data["discipline"] = discipline
 
-        input_df = pd.DataFrame([input_data])
-        input_encoded = prepare_model_input(input_data, training_columns)
-        model_status = predict_accreditation(model, label_encoder, input_encoded)
-        probabilities = predict_probabilities(model, label_encoder, input_encoded)
-        ml_confidence = probabilities.get(model_status, 0.0)
-        predicted_status = determine_nuc_status(programme_score)
+        section_scores = {
+            ACADEMIC_MATTERS: academic_points,
+            "Staffing": staffing_points,
+            "Physical Facilities": physical_facilities_points,
+            "Library": library_points,
+            "Funding": funding_points,
+            "Research and Collaboration": research_collaboration_points,
+            "Tracer and Employers' Rating": tracer_points,
+        }
+        core_percentages = {
+            name: score_percentage(section_scores[name], SECTION_MAX[name])
+            for name in CORE_CATEGORIES
+        }
+        accreditation_status = determine_nuc_status(core_percentages)
 
-        st.subheader("Section Scores")
+        criterion_responses = {
+            ACADEMIC_MATTERS: academic,
+            "Staffing": {
+                "staff_student_ratio_compliant": staff_ratio_feature,
+                "proportion_core_staff_sufficient": core_staff_feature,
+                "staff_rank_mix_balanced": staff_mix_feature,
+                "academic_staff_qualification_high": phd_feature,
+                "staff_competence_verified": staffing_noncomputed["staff_competence_verified"],
+                "administrative_support_available": staffing_noncomputed["administrative_support_available"],
+                "non_teaching_staff_adequate": non_teach_feature,
+                "academic_staff_development_programme": acad_dev_feature,
+                "non_academic_staff_development_programme": non_acad_dev_feature,
+            },
+            "Physical Facilities": facilities,
+            "Library": library,
+            "Funding": funding,
+            "Research and Collaboration": research_collaboration,
+            "Tracer and Employers' Rating": tracer_rating,
+        }
+        findings = generate_findings(section_scores, criterion_responses)
+        report = build_deterministic_report(
+            institution=institution,
+            discipline=discipline,
+            programme=programme,
+            programme_score=programme_score,
+            accreditation_status=accreditation_status,
+            section_scores=section_scores,
+            findings=findings,
+        )
+
+        st.subheader("Accreditation Assessment Results")
 
         row1 = st.columns(4)
         row2 = st.columns(4)
 
         with row1[0]:
-            display_score_card("Academic Content", academic_points, SECTION_MAX["Academic Content"])
+            display_score_card(ACADEMIC_MATTERS, academic_points, SECTION_MAX[ACADEMIC_MATTERS])
         with row1[1]:
             display_score_card("Staffing", staffing_points, SECTION_MAX["Staffing"])
         with row1[2]:
@@ -4267,82 +4028,32 @@ elif st.session_state.page == "New Assessment":
         with row2[1]:
             display_score_card("Research and Collaboration", research_collaboration_points, SECTION_MAX["Research and Collaboration"])
         with row2[2]:
-            display_score_card("Tracer and Employers’ Rating", tracer_points, SECTION_MAX["Tracer and Employers’ Rating"])
+            display_score_card("Tracer and Employers' Rating", tracer_points, SECTION_MAX["Tracer and Employers' Rating"])
         with row2[3]:
             st.markdown(
-                f'<div class="score-card"><h4>Programme Score</h4><h2>{programme_score:.2f}%</h2><p>{total_points:.2f} / {TOTAL_MAX_SCORE}</p></div>',
+                f'<div class="score-card"><h4>Programme Score</h4><h2>{programme_score:.2f}%</h2></div>',
                 unsafe_allow_html=True
             )
 
-        st.subheader("Score-Based Readiness Classification")
-        st.success(predicted_status)
-        st.subheader("Random Forest Prediction")
-        st.info(f"{model_status} ({ml_confidence:.1%} confidence)")
-        prob_cols = st.columns(3)
-        for idx, status in enumerate(["FULL", "INTERIM", "DENIED"]):
-            prob_cols[idx].metric(f"{status} Probability", f"{probabilities.get(status, 0):.1%}")
-        st.caption(f"Model: {model_metadata['model_name']} | Version: {model_metadata['model_version']} | Training date: {model_metadata['training_date']}")
-        if model_status != predicted_status:
-            st.warning("The machine-learning prediction and score-based readiness classification differ. Review the highlighted criteria, supporting evidence and unresolved information before relying on the result.")
-        else:
-            st.success("The Random Forest prediction agrees with the score-based classification.")
-
-        importance_df = get_feature_importance(model, training_columns)
-        weak = []
-        for col in input_df.columns:
-            if col in importance_df["feature"].values:
-                value = input_df[col].iloc[0]
-                if value in [0.0, 0.5, 0.33, 0.25]:
-                    impact = importance_df.loc[
-                        importance_df["feature"] == col,
-                        "importance"
-                    ].values[0]
-                    weak.append((col, value, impact))
-
-        weak = sorted(weak, key=lambda x: x[2], reverse=True)
-
-        if weak:
-            weak_df = pd.DataFrame([
-                {
-                    "Feature": w[0].replace("_", " ").title(),
-                    "Severity": "Critical" if w[1] in [0.0, 0.25] else "Moderate",
-                    "Importance": round(float(w[2]), 4),
-                }
-                for w in weak[:10]
-            ])
-            st.subheader("Top High-Impact Weak Areas")
-            st.dataframe(weak_df, width="stretch")
-            top_weaknesses = "\n".join(
-                [f"- {w[0].replace('_', ' ').title()}" for w in weak[:10]]
-            )
-        else:
-            top_weaknesses = "- No major weaknesses were detected from the submitted responses."
-            st.info("No major weaknesses were detected from the submitted responses.")
-
-        with st.spinner("Generating accreditation report..."):
-            report = generate_advisory_report(
-                institution=institution,
-                programme=programme,
-                discipline=discipline,
-                programme_score=programme_score,
-                predicted_status=predicted_status,
-                actual_ratio=actual_ratio,
-                ratio_score_raw=ratio_score_raw,
-                core_pct=core_pct,
-                core_score_raw=core_score_raw,
-                mix_score_raw=mix_score_raw,
-                phd_pct=phd_pct,
-                phd_score_raw=phd_score_raw,
-                acad_dev_pct=acad_dev_pct,
-                acad_dev_score_raw=acad_dev_score_raw,
-                non_teach_score_raw=non_teach_score_raw,
-                non_acad_dev_pct=non_acad_dev_pct,
-                non_acad_dev_score_raw=non_acad_dev_score_raw,
-                top_weaknesses=top_weaknesses,
-            )
-
-        st.subheader("Accreditation Report")
+        st.subheader("Accreditation Status")
+        st.success(f"{accreditation_status} ACCREDITATION")
+        st.subheader("Programme Score")
+        st.metric("Calculated programme percentage", f"{programme_score:.2f}%")
+        st.subheader("Deficiencies and Recommended Remedies")
         st.markdown(report)
+
+        payload = {
+            "scoring_policy_version": SCORING_POLICY_VERSION,
+            "responses": input_data,
+            "section_scores": section_scores,
+            "section_percentages": {
+                name: score_percentage(points, SECTION_MAX[name])
+                for name, points in section_scores.items()
+            },
+            "core_percentages": core_percentages,
+            "accreditation_status": accreditation_status,
+            "findings": [finding.to_dict() for finding in findings],
+        }
 
         save_assessment(
             user_id=st.session_state.user["id"],
@@ -4350,15 +4061,15 @@ elif st.session_state.page == "New Assessment":
             discipline=discipline,
             programme=programme,
             programme_score=float(programme_score),
-            predicted_status=model_status,
+            predicted_status=accreditation_status,
             actual_ratio=float(actual_ratio),
             core_pct=float(core_pct),
             phd_pct=float(phd_pct),
-            assessment_payload=json.dumps(input_data),
+            assessment_payload=json.dumps(payload),
             report_text=report,
             assessment_type="standard_manual",
-            rule_based_status=predicted_status,
-            ml_confidence=float(ml_confidence),
+            rule_based_status=accreditation_status,
+            ml_confidence=None,
             extraction_summary=None,
             evidence_coverage=100.0,
             total_points=float(total_points),
@@ -4366,19 +4077,17 @@ elif st.session_state.page == "New Assessment":
 
         st.success("Assessment and report saved successfully.")
         st.download_button("Download Markdown Report", report, file_name="manual_readiness_report.md")
-        st.download_button("Download JSON Assessment Record", json.dumps(input_data, indent=2), file_name="manual_assessment_record.json")
+        st.download_button("Download JSON Assessment Record", json.dumps(payload, indent=2), file_name="accreditation_assessment_record.json")
         st.download_button(
             "Download CSV Score Summary",
             pd.DataFrame([
-                {"section": "Academic Content", "points": academic_points, "maximum": SECTION_MAX["Academic Content"]},
-                {"section": "Staffing", "points": staffing_points, "maximum": SECTION_MAX["Staffing"]},
-                {"section": "Physical Facilities", "points": physical_facilities_points, "maximum": SECTION_MAX["Physical Facilities"]},
-                {"section": "Library", "points": library_points, "maximum": SECTION_MAX["Library"]},
-                {"section": "Funding", "points": funding_points, "maximum": SECTION_MAX["Funding"]},
-                {"section": "Research and Collaboration", "points": research_collaboration_points, "maximum": SECTION_MAX["Research and Collaboration"]},
-                {"section": "Tracer and Employers’ Rating", "points": tracer_points, "maximum": SECTION_MAX["Tracer and Employers’ Rating"]},
+                {
+                    "section": name,
+                    "percentage": f"{score_percentage(points, SECTION_MAX[name]):.2f}%",
+                }
+                for name, points in section_scores.items()
             ]).to_csv(index=False),
-            file_name="manual_score_summary.csv",
+            file_name="accreditation_score_summary.csv",
         )
 
 # =========================================================
@@ -4387,7 +4096,7 @@ elif st.session_state.page == "New Assessment":
 elif st.session_state.page == "Saved Assessments":
     page_intro(
         "Saved Assessments",
-        "Review stored readiness records, model outputs, and evidence indicators for completed assessments.",
+        "Review stored accreditation results and evidence indicators for completed assessments.",
         None,
     )
     df_assessments = get_user_assessments(st.session_state.user["id"])
@@ -4396,7 +4105,7 @@ elif st.session_state.page == "Saved Assessments":
         render_empty_state(
             "empty_assessments.svg",
             "No saved assessments",
-            "Completed manual and Computing document assessments will appear here after they are saved."
+            "Completed accreditation assessments will appear here after they are saved."
         )
     else:
         st.dataframe(df_assessments, width="stretch")
@@ -4416,7 +4125,7 @@ elif st.session_state.page == "Report History":
         render_empty_state(
             "empty_reports.svg",
             "No reports generated",
-            "Advisory reports will appear here after a readiness prediction has been generated and saved."
+            "Accreditation reports will appear here after an assessment has been generated and saved."
         )
     else:
         f1, f2, f3 = st.columns(3)
@@ -4425,7 +4134,7 @@ elif st.session_state.page == "Report History":
         with f2:
             programme_filter = st.selectbox("Programme", ["All"] + sorted(df_reports["programme_name"].dropna().unique().tolist()))
         with f3:
-            status_filter = st.selectbox("Status", ["All"] + sorted(df_reports["rule_based_status"].dropna().unique().tolist()))
+            status_filter = st.selectbox("Status", ["All"] + sorted(df_reports["accreditation_status"].dropna().unique().tolist()))
 
         filtered = df_reports.copy()
         if assessment_filter != "All":
@@ -4433,13 +4142,13 @@ elif st.session_state.page == "Report History":
         if programme_filter != "All":
             filtered = filtered[filtered["programme_name"] == programme_filter]
         if status_filter != "All":
-            filtered = filtered[filtered["rule_based_status"] == status_filter]
+            filtered = filtered[filtered["accreditation_status"] == status_filter]
 
         for _, row in filtered.iterrows():
-            title = f"{row['institution_name']} | {row['programme_name']} | {row['assessment_type']} | {row['rule_based_status']} | {row['created_at']}"
+            title = f"{row['institution_name']} | {row['programme_name']} | {row['assessment_type']} | {row['accreditation_status']} | {row['created_at']}"
             with st.expander(title):
                 st.write(f"**Programme Score:** {row['programme_score']:.2f}%")
-                st.write(f"**Random Forest Prediction:** {row['predicted_status']} ({(row['ml_confidence'] or 0):.1%})")
+                st.write(f"**Accreditation Status:** {row['accreditation_status']} ACCREDITATION")
                 if row["evidence_coverage"] is not None:
                     st.write(f"**Evidence Coverage:** {row['evidence_coverage']:.2f}%")
                 st.markdown(row["report_text"] or "No report text saved.")
@@ -4480,14 +4189,12 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.user.get("r
             st.metric("Average Evidence Coverage", "0.00%")
 
     if not assessments_df.empty:
-        a1, a2, a3 = st.columns(3)
-        a1.metric("Standard Manual", int((assessments_df["assessment_type"] == "standard_manual").sum()))
-        a2.metric("Computing Documents", int((assessments_df["assessment_type"] == "computing_document").sum()))
-        disagreements = (assessments_df["rule_based_status"] != assessments_df["predicted_status"]).sum()
-        a3.metric("Rule / Model Disagreements", int(disagreements))
+        a1, a2 = st.columns(2)
+        a1.metric("Accreditation Assessments", int((assessments_df["assessment_type"] == "standard_manual").sum()))
+        a2.metric("Historical Document Assessments", int((assessments_df["assessment_type"] == "computing_document").sum()))
 
         st.subheader("Status Distribution")
-        status_distribution = assessments_df["rule_based_status"].value_counts()
+        status_distribution = assessments_df["accreditation_status"].value_counts()
         st.bar_chart(
             status_distribution.rename_axis("Status").reset_index(name="Count"),
             x="Status",
