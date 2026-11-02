@@ -1,7 +1,65 @@
+import ast
 import re
+from pathlib import Path
 
 from accreditation_reporting import CRITERION_RULES, build_deterministic_report, generate_findings
 from assessment_rules import ACADEMIC_MATTERS, SECTION_MAX, determine_accreditation_status
+
+
+APP_SOURCE = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+
+
+def active_questionnaire_criterion_ids():
+    """Derive reportable IDs from the active New Assessment response graph."""
+
+    tree = ast.parse(APP_SOURCE)
+    new_assessment = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and any(
+            isinstance(part, ast.Constant) and part.value == "New Assessment"
+            for part in ast.walk(node.test)
+        )
+    )
+
+    assignments = {}
+    criterion_responses = None
+    for node in ast.walk(new_assessment):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        assignments[target.id] = node.value
+        if target.id == "criterion_responses":
+            criterion_responses = node.value
+
+    assert isinstance(criterion_responses, ast.Dict), (
+        "The active assessment must expose criterion_responses as a dictionary "
+        "so reporting coverage can be audited."
+    )
+
+    def dict_keys(value):
+        if isinstance(value, ast.Name):
+            assert value.id in assignments, f"Unresolved questionnaire response group: {value.id}"
+            return dict_keys(assignments[value.id])
+        assert isinstance(value, ast.Dict), (
+            "Questionnaire response groups must remain statically auditable dictionaries; "
+            f"unsupported expression: {ast.dump(value, include_attributes=False)}"
+        )
+        keys = []
+        for key in value.keys:
+            assert isinstance(key, ast.Constant) and isinstance(key.value, str), (
+                "Questionnaire criterion IDs must be string literals."
+            )
+            keys.append(key.value)
+        return keys
+
+    criterion_ids = set()
+    for response_group in criterion_responses.values:
+        criterion_ids.update(dict_keys(response_group))
+    return criterion_ids
 
 
 def complete_scores(core_percentage=80.0):
@@ -52,6 +110,61 @@ def test_report_has_exact_four_section_sequence_and_no_scores():
     assert "Core Accreditation Performance" not in report
     assert "Advisory Disclaimer" not in report
     assert "%" not in report
+
+
+def test_failed_philosophy_and_objectives_is_reported_above_aggregate_threshold():
+    findings = generate_findings(
+        complete_scores(80),
+        {ACADEMIC_MATTERS: {"philosophy_objectives_defined": 0.0}},
+    )
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.criterion == "Philosophy and objectives"
+    assert finding.source_criterion_ids == ("philosophy_objectives_defined",)
+    assert finding.deficiency == (
+        "The programme philosophy and objectives are not well stated or are not "
+        "aligned with the applicable CCMAS requirements."
+    )
+    assert finding.remedy == (
+        "The institution should revise and formally document the programme philosophy "
+        "and objectives to align with the applicable CCMAS requirements."
+    )
+
+    report = build_report(findings)
+    headings = re.findall(r"^## (.+)$", report, flags=re.MULTILINE)
+    assert headings == [
+        "Accreditation Status",
+        "Accreditation Assessment Summary",
+        "Deficiencies",
+        "Remedies",
+    ]
+    assert finding.deficiency in report
+    assert finding.remedy in report
+
+
+def test_compliant_philosophy_and_objectives_has_no_false_deficiency():
+    findings = generate_findings(
+        complete_scores(80),
+        {ACADEMIC_MATTERS: {"philosophy_objectives_defined": 1.0}},
+    )
+
+    assert not any(
+        "philosophy_objectives_defined" in finding.source_criterion_ids
+        for finding in findings
+    )
+
+
+def test_missing_philosophy_response_remains_distinct_from_confirmed_deficiency():
+    findings = generate_findings(
+        complete_scores(80),
+        {ACADEMIC_MATTERS: {"philosophy_objectives_defined": None}},
+    )
+
+    assert len(findings) == 1
+    assert findings[0].observed_performance == "No response recorded"
+    assert "cannot be determined" in findings[0].deficiency
+    assert "not well stated" not in findings[0].deficiency
 
 
 def test_library_weaknesses_are_specific_and_meaningfully_consolidated():
@@ -148,24 +261,8 @@ def test_report_generation_is_repeatable_and_external_api_independent():
 
 
 def test_finding_rules_cover_every_supported_manual_assessment_criterion():
-    expected = {
-        "curriculum_aligned_with_BMAS", "innovative_courses_present",
-        "curriculum_coverage_complete", "admission_requirements_compliant",
-        "academic_regulations_defined", "tests_and_examinations_standardized",
-        "evaluation_methods_clear", "degree_projects_adequate",
-        "practical_work_adequate", "student_course_evaluation_present",
-        "skills_acquisition_programme", "external_examiner_system",
-        "internal_quality_assurance", "staff_student_ratio_compliant",
-        "proportion_core_staff_sufficient", "staff_rank_mix_balanced",
-        "academic_staff_qualification_high", "staff_competence_verified",
-        "administrative_support_available", "non_teaching_staff_adequate",
-        "academic_staff_development_programme",
-        "non_academic_staff_development_programme", "laboratory_space_adequate",
-        "laboratory_equipment_adequate", "classroom_space_adequate",
-        "classroom_equipment_adequate", "office_accommodation_adequate",
-        "safety_environment_present", "library_holdings_adequate",
-        "library_material_current", "e_library_subscription_available",
-        "e_library_access_good", "programme_funding_adequate",
-        "research_collaboration_active", "employer_rating_positive",
-    }
-    assert expected <= CRITERION_RULES.keys()
+    active_criteria = active_questionnaire_criterion_ids()
+    unmapped = active_criteria - CRITERION_RULES.keys()
+
+    assert "philosophy_objectives_defined" in active_criteria
+    assert not unmapped, f"Active questionnaire criteria without reporting rules: {sorted(unmapped)}"

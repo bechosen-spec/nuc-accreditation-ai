@@ -56,6 +56,12 @@ def _rule(label: str, group: str, deficiency: str, remedy: str) -> CriterionRule
 
 CRITERION_RULES: dict[str, CriterionRule] = {
     # Academic Matters
+    "philosophy_objectives_defined": _rule(
+        "Philosophy and objectives",
+        "academic_governance",
+        "The programme philosophy and objectives are not well stated or are not aligned with the applicable CCMAS requirements.",
+        "The institution should revise and formally document the programme philosophy and objectives to align with the applicable CCMAS requirements.",
+    ),
     "curriculum_aligned_with_BMAS": _rule(
         "Curriculum compliance", "academic_curriculum",
         "The curriculum does not adequately align with the applicable minimum academic standards.",
