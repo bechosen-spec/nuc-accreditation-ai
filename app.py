@@ -1680,7 +1680,7 @@ import sqlite3
 import hashlib
 import hmac
 import os
-from datetime import datetime
+from datetime import date, datetime
 from dataclasses import dataclass, asdict
 from html import escape
 from io import BytesIO
@@ -1693,17 +1693,21 @@ from config.computing_requirements import COMPUTING_PROGRAMMES, COMPUTING_RULES,
 from config.institutions import KNOWN_INSTITUTIONS
 from services.document_parser import read_uploaded_file
 from services.institution_extractor import extract_institution_name, institution_is_resolved
-from accreditation_reporting import build_deterministic_report, generate_findings
+from accreditation_reporting import Finding, build_deterministic_report, generate_findings
 from assessment_rules import (
     ACADEMIC_MATTERS,
     CORE_CATEGORIES,
+    CURRENCY_OF_HOLDINGS_OPTIONS,
+    LIBRARY_HOLDINGS_OPTIONS as LIBRARY_HOLDINGS_RUBRIC,
     SCORING_POLICY_VERSION,
     SECTION_MAX,
     TOTAL_MAX_SCORE,
     calculate_funding_score,
     determine_accreditation_status,
     format_percentage,
+    raw_option_score,
     score_percentage,
+    scored_options,
 )
 
 try:
@@ -1999,6 +2003,7 @@ def init_db():
             "total_points": "REAL",
             "updated_at": "TEXT",
             "scoring_policy_version": "TEXT DEFAULT 'legacy-v1'",
+            "assessment_date": "TEXT",
         }
         for column, ddl in migrations.items():
             if column not in existing_cols:
@@ -2110,7 +2115,8 @@ def save_assessment(user_id: int, institution: str, discipline: str, programme: 
                     confirmed_institution_value: str = None,
                     institution_corrected_by_user: bool = False,
                     institution_correction_timestamp: str = None,
-                    scoring_policy_version: str = SCORING_POLICY_VERSION):
+                    scoring_policy_version: str = SCORING_POLICY_VERSION,
+                    assessment_date: str = None):
     conn = get_conn()
     cur = conn.cursor()
     created_at = datetime.utcnow().isoformat()
@@ -2123,6 +2129,7 @@ def save_assessment(user_id: int, institution: str, discipline: str, programme: 
         "confirmed_institution_value", "institution_corrected_by_user",
         "institution_correction_timestamp", "evidence_coverage", "total_points", "updated_at",
         "scoring_policy_version",
+        "assessment_date",
     ]
     values = [
         user_id, institution, discipline, programme,
@@ -2135,6 +2142,7 @@ def save_assessment(user_id: int, institution: str, discipline: str, programme: 
         int(bool(institution_corrected_by_user)), institution_correction_timestamp,
         evidence_coverage, total_points, created_at,
         scoring_policy_version,
+        assessment_date or date.today().isoformat(),
     ]
 
     cur.execute("PRAGMA table_info(assessments)")
@@ -2171,14 +2179,45 @@ def get_user_assessments(user_id: int):
     return df
 
 
+def public_status_label(value) -> str:
+    status = str(value or "").replace(" ACCREDITATION", "").strip().upper()
+    return f"{status} ACCREDITATION" if status else "STATUS UNAVAILABLE"
+
+
+def get_saved_assessments_view(user_id: int):
+    """Return only the five human-readable fields approved for this page."""
+
+    conn = get_conn()
+    df = pd.read_sql_query(
+        """
+        SELECT institution_name AS "Institution Name",
+               discipline AS "Discipline",
+               programme_name AS "Programme Name",
+               COALESCE(rule_based_status, predicted_status) AS "Accreditation Status",
+               COALESCE(assessment_date, substr(created_at, 1, 10)) AS "Assessment Date"
+        FROM assessments
+        WHERE user_id = ?
+        ORDER BY date(COALESCE(assessment_date, created_at)) DESC,
+                 datetime(created_at) DESC
+        """,
+        conn,
+        params=(user_id,),
+    )
+    conn.close()
+    if not df.empty:
+        df["Accreditation Status"] = df["Accreditation Status"].map(public_status_label)
+        formatted = pd.to_datetime(df["Assessment Date"], errors="coerce")
+        df["Assessment Date"] = formatted.dt.strftime("%d %b %Y").fillna(df["Assessment Date"])
+    return df
+
+
 def get_user_report_history(user_id: int):
     conn = get_conn()
     df = pd.read_sql_query(
         """
         SELECT id, institution_name, discipline, programme_name,
-               assessment_type,
                COALESCE(rule_based_status, predicted_status) AS accreditation_status,
-               programme_score, evidence_coverage,
+               COALESCE(assessment_date, substr(created_at, 1, 10)) AS assessment_date,
                created_at, report_text, assessment_payload
         FROM assessments
         WHERE user_id = ?
@@ -2189,6 +2228,53 @@ def get_user_report_history(user_id: int):
     )
     conn.close()
     return df
+
+
+def public_report_from_history(row) -> str:
+    """Re-render saved records through the current score-free report policy."""
+
+    try:
+        payload = json.loads(row.get("assessment_payload") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        payload = {}
+
+    findings = []
+    for index, item in enumerate(payload.get("findings") or [], start=1):
+        deficiency = item.get("deficiency")
+        remedy = item.get("remedy") or item.get("recommended_action")
+        if not deficiency or not remedy:
+            continue
+        findings.append(Finding(
+            id=item.get("id") or f"D{index:03d}",
+            category=item.get("category") or "Assessment",
+            criterion=item.get("criterion") or "Recorded criterion",
+            deficiency=deficiency,
+            remedy=remedy,
+            source_criterion_ids=tuple(item.get("source_criterion_ids") or []),
+        ))
+
+    if not findings and payload.get("section_scores"):
+        findings = generate_findings(payload["section_scores"], {})
+    if not findings and not payload.get("section_scores"):
+        findings = [Finding(
+            id="D001",
+            category="Assessment Evidence",
+            criterion="Historical assessment record",
+            deficiency="The historical record does not contain sufficient structured assessment evidence to determine specific deficiencies.",
+            remedy="The institution should review the original assessment evidence and complete a current assessment before relying on this historical report.",
+            source_criterion_ids=(),
+            observed_performance="Structured evidence unavailable",
+            expected_standard="A complete structured assessment record",
+        )]
+
+    return build_deterministic_report(
+        institution=row["institution_name"],
+        discipline=row["discipline"],
+        programme=row["programme_name"],
+        accreditation_status=row["accreditation_status"],
+        findings=findings,
+        assessment_date=row["assessment_date"],
+    )
 
 
 def get_all_users():
@@ -2486,20 +2572,8 @@ SAFETY_OPTIONS = [
     {"label": "Unsafe and violate Government Laws relating to fire and environmental sanitation including toilet facilities", "score": 0.0},
 ]
 
-LIBRARY_HOLDINGS_OPTIONS = [
-    {"label": "Good quality and very relevant and adequate in number and coverage", "score": 1.0},
-    {"label": "Good quality and adequate in number and coverage", "score": 0.66},
-    {"label": "Inadequate in number, quality and coverage", "score": 0.33},
-    {"label": "Poor quality and inadequate in number and coverage", "score": 0.0},
-]
-
-CURRENCY_OPTIONS = [
-    {"label": "Very current for both recommended text and journals", "score": 1.0},
-    {"label": "Very current for recommended text but current for journals or vice versa", "score": 0.75},
-    {"label": "Current for recommended text and journals", "score": 0.5},
-    {"label": "Current for recommended text but not for journals or vice versa", "score": 0.25},
-    {"label": "Not current at all for both recommended text and journals", "score": 0.0},
-]
+LIBRARY_HOLDINGS_OPTIONS = scored_options(LIBRARY_HOLDINGS_RUBRIC)
+CURRENCY_OPTIONS = scored_options(CURRENCY_OF_HOLDINGS_OPTIONS)
 
 ACCESS_EBOOKS_OPTIONS = [
     {"label": "Internet, Library website, Campus Hotspots and Intranet", "score": 1.0},
@@ -2552,7 +2626,7 @@ def ask_scored_question(label: str, options: list, key: str):
         return None
     for opt in options:
         if opt["label"] == selected:
-            return opt["score"]
+            return opt["score"] / opt.get("max_score", 1)
     return None
 
 
@@ -3130,6 +3204,7 @@ def render_computing_document_assessment():
             field: None for field in missing_fields + conflicting_fields
         }
         deterministic_findings = generate_findings(section_scores, criterion_responses)
+        current_assessment_date = date.today().isoformat()
         report = build_deterministic_report(
             institution=institution,
             discipline="Computing",
@@ -3138,17 +3213,9 @@ def render_computing_document_assessment():
             accreditation_status=rule_based_status,
             section_scores=section_scores,
             findings=deterministic_findings,
+            assessment_date=current_assessment_date,
         )
 
-        st.subheader("Accreditation Assessment Results")
-        st.dataframe(pd.DataFrame([
-            {"Section": name, "Percentage": f"{score_percentage(score, SECTION_MAX[name]):.2f}%"}
-            for name, score in section_scores.items()
-        ]), width="stretch")
-        st.subheader("Accreditation Status")
-        st.success(f"{rule_based_status} ACCREDITATION")
-
-        st.subheader("Deficiencies and Recommended Remedies")
         st.markdown(report)
 
         payload = {
@@ -3190,18 +3257,10 @@ def render_computing_document_assessment():
             institution_correction_timestamp=institution_evidence.get("correction_timestamp"),
             evidence_coverage=float(coverage),
             total_points=float(total_points),
+            assessment_date=current_assessment_date,
         )
         st.success("Computing document assessment and report saved successfully.")
         st.download_button("Download Markdown Report", report, file_name="computing_readiness_report.md")
-        st.download_button("Download JSON Assessment Record", json.dumps(payload, indent=2), file_name="computing_assessment_record.json")
-        st.download_button(
-            "Download CSV Score Summary",
-            pd.DataFrame([
-                {"section": k, "percentage": f"{score_percentage(v, SECTION_MAX[k]):.2f}%"}
-                for k, v in section_scores.items()
-            ]).to_csv(index=False),
-            file_name="computing_score_summary.csv",
-        )
 
 # =========================================================
 # STAFFING CALCULATION ENGINE
@@ -3355,28 +3414,28 @@ def build_nuc_style_report(
     deficiencies: list,
     remedies: list,
 ):
+    del programme_score
     deficiency_lines = "\n".join([f"{idx+1}. {item}" for idx, item in enumerate(deficiencies)]) if deficiencies else "No deficiency was identified from the recorded responses."
     remedy_lines = "\n".join([f"{idx+1}. {item}" for idx, item in enumerate(remedies)]) if remedies else "Maintain current controls and supporting evidence."
 
     return f"""
+## Accreditation Status
+
+**{predicted_status} ACCREDITATION**
+
 ## Accreditation Assessment Summary
 
 **DATE OF VISITATION:** {datetime.now().strftime("%d %B %Y")}  
 **UNIVERSITY:** {institution}  
 **DISCIPLINE:** {discipline}  
 **PROGRAMME:** {programme}  
+**ACCREDITATION STATUS:** {predicted_status} ACCREDITATION
 
-**PROGRAMME SCORE:** {programme_score:.2f}%  
-**ACCREDITATION STATUS:** {predicted_status}  
-
-### Deficiencies
+## Deficiencies
 {deficiency_lines}
 
-### Recommended Remedies
+## Remedies
 {remedy_lines}
-
-## Advisory Disclaimer
-This readiness report does not represent approval or an official accreditation decision by the Commission.
 """.strip()
 
 
@@ -3531,7 +3590,6 @@ if st.session_state.user is None:
                 Assess programme readiness, analyse accreditation evidence and generate actionable reports.
             </p>
             <div class="benefit-item"><span class="benefit-dot"></span><span>Structured NUC-style assessment</span></div>
-            <div class="benefit-item"><span class="benefit-dot"></span><span>Rule-based accreditation classification</span></div>
             <div class="benefit-item"><span class="benefit-dot"></span><span>Evidence-based advisory reporting</span></div>
             """,
             unsafe_allow_html=True,
@@ -3650,15 +3708,13 @@ if st.session_state.page == "Dashboard":
             "Start a new accreditation assessment to evaluate programme performance and track accreditation readiness."
         )
     else:
-        avg_score = df_assessments["programme_score"].dropna().mean()
         latest_status = df_assessments.iloc[0]["accreditation_status"]
         incomplete_count = int(df_assessments["programme_score"].isna().sum())
-        d1, d2, d3, d4, d5 = st.columns(5)
+        d1, d2, d3, d4 = st.columns(4)
         d1.metric("Total Assessments", len(df_assessments))
-        d2.metric("Average Programme Score", f"{avg_score:.2f}%" if pd.notna(avg_score) else "0.00%")
-        d3.metric("Latest Status", latest_status)
-        d4.metric("Document Assessments", int((df_assessments["assessment_type"] == "computing_document").sum()))
-        d5.metric("Incomplete", incomplete_count)
+        d2.metric("Latest Status", latest_status)
+        d3.metric("Document Assessments", int((df_assessments["assessment_type"] == "computing_document").sum()))
+        d4.metric("Incomplete", incomplete_count)
 
         chart_data = df_assessments["accreditation_status"].value_counts()
         if not chart_data.empty:
@@ -3671,7 +3727,7 @@ if st.session_state.page == "Dashboard":
             )
 
         st.subheader("Recent Assessments")
-        st.dataframe(df_assessments.head(5), width="stretch")
+        st.dataframe(get_saved_assessments_view(st.session_state.user["id"]).head(5), width="stretch")
 
 # =========================================================
 # NEW ASSESSMENT
@@ -3924,7 +3980,7 @@ elif st.session_state.page == "New Assessment":
         total_points = None
         programme_score = None
 
-    st.subheader("Generate Accreditation Assessment Results")
+    st.subheader("Generate Accreditation Report")
 
     required_basic = inputs_complete([institution, discipline, programme])
     required_all_sections = all(v is not None for v in [
@@ -3999,6 +4055,7 @@ elif st.session_state.page == "New Assessment":
             "Tracer and Employers' Rating": tracer_rating,
         }
         findings = generate_findings(section_scores, criterion_responses)
+        current_assessment_date = date.today().isoformat()
         report = build_deterministic_report(
             institution=institution,
             discipline=discipline,
@@ -4007,39 +4064,9 @@ elif st.session_state.page == "New Assessment":
             accreditation_status=accreditation_status,
             section_scores=section_scores,
             findings=findings,
+            assessment_date=current_assessment_date,
         )
 
-        st.subheader("Accreditation Assessment Results")
-
-        row1 = st.columns(4)
-        row2 = st.columns(4)
-
-        with row1[0]:
-            display_score_card(ACADEMIC_MATTERS, academic_points, SECTION_MAX[ACADEMIC_MATTERS])
-        with row1[1]:
-            display_score_card("Staffing", staffing_points, SECTION_MAX["Staffing"])
-        with row1[2]:
-            display_score_card("Physical Facilities", physical_facilities_points, SECTION_MAX["Physical Facilities"])
-        with row1[3]:
-            display_score_card("Library", library_points, SECTION_MAX["Library"])
-
-        with row2[0]:
-            display_score_card("Funding", funding_points, SECTION_MAX["Funding"])
-        with row2[1]:
-            display_score_card("Research and Collaboration", research_collaboration_points, SECTION_MAX["Research and Collaboration"])
-        with row2[2]:
-            display_score_card("Tracer and Employers' Rating", tracer_points, SECTION_MAX["Tracer and Employers' Rating"])
-        with row2[3]:
-            st.markdown(
-                f'<div class="score-card"><h4>Programme Score</h4><h2>{programme_score:.2f}%</h2></div>',
-                unsafe_allow_html=True
-            )
-
-        st.subheader("Accreditation Status")
-        st.success(f"{accreditation_status} ACCREDITATION")
-        st.subheader("Programme Score")
-        st.metric("Calculated programme percentage", f"{programme_score:.2f}%")
-        st.subheader("Deficiencies and Recommended Remedies")
         st.markdown(report)
 
         payload = {
@@ -4053,6 +4080,15 @@ elif st.session_state.page == "New Assessment":
             "core_percentages": core_percentages,
             "accreditation_status": accreditation_status,
             "findings": [finding.to_dict() for finding in findings],
+            "assessment_date": current_assessment_date,
+            "rubric_scores": {
+                "library_holdings_adequate": raw_option_score(
+                    LIBRARY_HOLDINGS_OPTIONS, library["library_holdings_adequate"]
+                ),
+                "library_material_current": raw_option_score(
+                    CURRENCY_OPTIONS, library["library_material_current"]
+                ),
+            },
         }
 
         save_assessment(
@@ -4073,22 +4109,11 @@ elif st.session_state.page == "New Assessment":
             extraction_summary=None,
             evidence_coverage=100.0,
             total_points=float(total_points),
+            assessment_date=current_assessment_date,
         )
 
         st.success("Assessment and report saved successfully.")
         st.download_button("Download Markdown Report", report, file_name="manual_readiness_report.md")
-        st.download_button("Download JSON Assessment Record", json.dumps(payload, indent=2), file_name="accreditation_assessment_record.json")
-        st.download_button(
-            "Download CSV Score Summary",
-            pd.DataFrame([
-                {
-                    "section": name,
-                    "percentage": f"{score_percentage(points, SECTION_MAX[name]):.2f}%",
-                }
-                for name, points in section_scores.items()
-            ]).to_csv(index=False),
-            file_name="accreditation_score_summary.csv",
-        )
 
 # =========================================================
 # SAVED ASSESSMENTS
@@ -4099,7 +4124,7 @@ elif st.session_state.page == "Saved Assessments":
         "Review stored accreditation results and evidence indicators for completed assessments.",
         None,
     )
-    df_assessments = get_user_assessments(st.session_state.user["id"])
+    df_assessments = get_saved_assessments_view(st.session_state.user["id"])
 
     if df_assessments.empty:
         render_empty_state(
@@ -4128,34 +4153,35 @@ elif st.session_state.page == "Report History":
             "Accreditation reports will appear here after an assessment has been generated and saved."
         )
     else:
-        f1, f2, f3 = st.columns(3)
+        f1, f2 = st.columns(2)
         with f1:
-            assessment_filter = st.selectbox("Assessment Type", ["All"] + sorted(df_reports["assessment_type"].dropna().unique().tolist()))
-        with f2:
             programme_filter = st.selectbox("Programme", ["All"] + sorted(df_reports["programme_name"].dropna().unique().tolist()))
-        with f3:
+        with f2:
             status_filter = st.selectbox("Status", ["All"] + sorted(df_reports["accreditation_status"].dropna().unique().tolist()))
 
         filtered = df_reports.copy()
-        if assessment_filter != "All":
-            filtered = filtered[filtered["assessment_type"] == assessment_filter]
         if programme_filter != "All":
             filtered = filtered[filtered["programme_name"] == programme_filter]
         if status_filter != "All":
             filtered = filtered[filtered["accreditation_status"] == status_filter]
 
         for _, row in filtered.iterrows():
-            title = f"{row['institution_name']} | {row['programme_name']} | {row['assessment_type']} | {row['accreditation_status']} | {row['created_at']}"
+            report_date = pd.to_datetime(row["assessment_date"], errors="coerce")
+            display_date = report_date.strftime("%d %b %Y") if pd.notna(report_date) else row["assessment_date"]
+            public_report = public_report_from_history(row)
+            display_status = public_status_label(row["accreditation_status"])
+            title = f"{row['institution_name']} | {row['programme_name']} | {display_status} | {display_date}"
             with st.expander(title):
-                st.write(f"**Programme Score:** {row['programme_score']:.2f}%")
-                st.write(f"**Accreditation Status:** {row['accreditation_status']} ACCREDITATION")
-                if row["evidence_coverage"] is not None:
-                    st.write(f"**Evidence Coverage:** {row['evidence_coverage']:.2f}%")
-                st.markdown(row["report_text"] or "No report text saved.")
+                st.write(f"**Institution:** {row['institution_name']}")
+                st.write(f"**Programme:** {row['programme_name']}")
+                st.write(f"**Accreditation Status:** {display_status}")
+                st.write(f"**Report Date:** {display_date}")
+                st.markdown(public_report)
+                safe_programme_name = re.sub(r"[^A-Za-z0-9]+", "_", row["programme_name"]).strip("_").lower()
                 st.download_button(
                     "Download Report",
-                    row["report_text"] or "",
-                    file_name=f"assessment_{row['id']}_report.md",
+                    public_report,
+                    file_name=f"{safe_programme_name or 'programme'}_accreditation_report.md",
                     key=f"download_report_{row['id']}",
                 )
 
@@ -4172,17 +4198,12 @@ elif st.session_state.page == "Admin Dashboard" and st.session_state.user.get("r
     users_df = get_all_users()
     assessments_df = get_all_assessments()
 
-    d1, d2, d3, d4 = st.columns(4)
+    d1, d2, d3 = st.columns(3)
     with d1:
         st.metric("Total Users", len(users_df))
     with d2:
         st.metric("Total Assessments", len(assessments_df))
     with d3:
-        if not assessments_df.empty:
-            st.metric("Average Programme Score", f"{assessments_df['programme_score'].mean():.2f}%")
-        else:
-            st.metric("Average Programme Score", "0.00%")
-    with d4:
         if not assessments_df.empty and "evidence_coverage" in assessments_df:
             st.metric("Average Evidence Coverage", f"{assessments_df['evidence_coverage'].fillna(100).mean():.2f}%")
         else:
