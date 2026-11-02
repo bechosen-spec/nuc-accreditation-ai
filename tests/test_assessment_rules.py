@@ -5,12 +5,16 @@ import pytest
 from assessment_rules import (
     ACADEMIC_MATTERS,
     CORE_CATEGORIES,
+    CURRENCY_OF_HOLDINGS_OPTIONS,
+    LIBRARY_HOLDINGS_OPTIONS,
     SECTION_MAX,
     TOTAL_MAX_SCORE,
     calculate_funding_score,
     determine_accreditation_status,
     format_percentage,
+    raw_option_score,
     score_percentage,
+    scored_options,
 )
 
 
@@ -104,3 +108,25 @@ def test_percentage_formatting_is_consistent():
     assert score_percentage(25.08, 37) == pytest.approx(67.7837837838)
     assert format_percentage(25.08, 37) == "67.78%"
     assert format_percentage(None, 37) == "—"
+
+
+def test_library_holdings_has_all_five_authoritative_scores():
+    assert LIBRARY_HOLDINGS_OPTIONS == (
+        ("Good quality and very relevant and adequate in number and coverage", 4),
+        ("Good quality and adequate in number and coverage", 3),
+        ("Good quality but inadequate in number and coverage", 2),
+        ("Inadequate in number, quality and coverage", 1),
+        ("Poor quality and inadequate in number and coverage", 0),
+    )
+    assert max(score for _, score in LIBRARY_HOLDINGS_OPTIONS) == 4
+    assert scored_options(LIBRARY_HOLDINGS_OPTIONS)[2]["score"] == 2
+    assert raw_option_score(scored_options(LIBRARY_HOLDINGS_OPTIONS), 0.5) == 2
+
+
+def test_currency_of_holdings_has_corrected_fourth_option_and_scores():
+    assert [score for _, score in CURRENCY_OF_HOLDINGS_OPTIONS] == [4, 3, 2, 1, 0]
+    assert CURRENCY_OF_HOLDINGS_OPTIONS[3] == (
+        "Current for recommended text but not current for journals or vice versa",
+        1,
+    )
+    assert max(score for _, score in CURRENCY_OF_HOLDINGS_OPTIONS) == 4

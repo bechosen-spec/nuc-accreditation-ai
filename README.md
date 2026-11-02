@@ -11,10 +11,10 @@ The system helps university departments assess their accreditation readiness bef
 ## 🚀 What It Does
 
 * 📋 Collects structured self-study questionnaire responses
-* 📊 Displays every category score as a percentage
 * ✅ Classifies FULL, INTERIM, or DENIED from the four core-category percentages
 * 🔎 Identifies deficiencies directly from recorded assessment findings
 * 🧭 Generates deterministic, actionable recommended remedies
+* 📄 Produces concise four-section reports without exposing internal scores
 
 ---
 
@@ -70,7 +70,7 @@ Funding uses the corrected bands: below ₦300,000 = 1 point; ₦300,000 to belo
 ## ▶️ Run Locally
 
 ```bash
-git clone https://github.com/yourusername/nuc-accreditation-ai.git
+git clone https://github.com/bechosen-spec/nuc-accreditation-ai.git
 cd nuc-accreditation-ai
 python3 -m venv venv
 source venv/bin/activate

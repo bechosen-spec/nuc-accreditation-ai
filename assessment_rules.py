@@ -35,6 +35,44 @@ SECTION_MAX = {
 TOTAL_MAX_SCORE = sum(SECTION_MAX.values())
 
 
+LIBRARY_HOLDINGS_OPTIONS = (
+    ("Good quality and very relevant and adequate in number and coverage", 4),
+    ("Good quality and adequate in number and coverage", 3),
+    ("Good quality but inadequate in number and coverage", 2),
+    ("Inadequate in number, quality and coverage", 1),
+    ("Poor quality and inadequate in number and coverage", 0),
+)
+
+CURRENCY_OF_HOLDINGS_OPTIONS = (
+    ("Very current for both recommended text and journals", 4),
+    ("Very current for recommended text but current for journals or vice versa", 3),
+    ("Current for recommended text and journals", 2),
+    ("Current for recommended text but not current for journals or vice versa", 1),
+    ("Not current at all for both recommended text and journals", 0),
+)
+
+
+def scored_options(options: Sequence[tuple[str, int]], maximum: int = 4) -> list[dict]:
+    """Return UI options with their authoritative raw score and maximum."""
+
+    return [
+        {"label": label, "score": score, "max_score": maximum}
+        for label, score in options
+    ]
+
+
+def raw_option_score(options: Sequence[Mapping[str, float]], normalized_score: float | None):
+    """Map a normalized engine value back to the rubric score saved in payloads."""
+
+    if normalized_score is None:
+        return None
+    for option in options:
+        maximum = option.get("max_score", 1)
+        if abs((option["score"] / maximum) - normalized_score) < 1e-9:
+            return option["score"]
+    return None
+
+
 def score_percentage(obtained_score: float, maximum_score: float) -> float:
     """Return an unrounded percentage for a valid score pair."""
 
