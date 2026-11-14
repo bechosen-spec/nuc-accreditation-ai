@@ -1701,6 +1701,7 @@ from assessment_rules import (
     LIBRARY_HOLDINGS_OPTIONS as LIBRARY_HOLDINGS_RUBRIC,
     SCORING_POLICY_VERSION,
     SECTION_MAX,
+    SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS,
     TOTAL_MAX_SCORE,
     calculate_funding_score,
     determine_accreditation_status,
@@ -2238,6 +2239,12 @@ def public_report_from_history(row) -> str:
     except (TypeError, json.JSONDecodeError):
         payload = {}
 
+    tracer_applicability_note = (
+        payload.get("applicability", {})
+        .get("graduate_tracer", {})
+        .get("reason")
+    )
+
     findings = []
     for index, item in enumerate(payload.get("findings") or [], start=1):
         deficiency = item.get("deficiency")
@@ -2274,6 +2281,7 @@ def public_report_from_history(row) -> str:
         accreditation_status=row["accreditation_status"],
         findings=findings,
         assessment_date=row["assessment_date"],
+        tracer_applicability_note=tracer_applicability_note,
     )
 
 
@@ -2603,12 +2611,10 @@ TRACER_OPTIONS = [
     {"label": "Tracer system not in place and performance below average", "score": 0.0},
 ]
 
-TRACER_NO_GRAD_OPTIONS = [
-    {
-        "label": "Not yet assessable because the programme has no graduates",
-        "score": None,
-    },
-]
+INDUSTRIAL_EXPERIENCE_OPTIONS = scored_options(
+    SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS,
+    maximum=2,
+)
 
 # =========================================================
 # HELPERS
@@ -2626,7 +2632,10 @@ def ask_scored_question(label: str, options: list, key: str):
         return None
     for opt in options:
         if opt["label"] == selected:
-            return opt["score"] / opt.get("max_score", 1)
+            score = opt.get("score")
+            if score is None:
+                return None
+            return score / opt.get("max_score", 1)
     return None
 
 
@@ -3920,15 +3929,29 @@ elif st.session_state.page == "New Assessment":
             key="graduated_students"
         )
 
-        tracer_options = None
+        tracer_section_responses = {}
+        tracer_applicability_note = None
         if has_graduated_students == "Yes":
-            tracer_options = TRACER_OPTIONS
+            tracer_section_responses = {
+                "employer_rating_positive": ask_scored_question(
+                    "Tracer and Employers' Rating",
+                    TRACER_OPTIONS,
+                    "t1",
+                ),
+            }
         elif has_graduated_students == "No":
-            tracer_options = TRACER_NO_GRAD_OPTIONS
-
-        tracer_rating = {
-            "employer_rating_positive": ask_scored_question("Tracer and Employers' Rating", tracer_options, "t1") if tracer_options else None,
-        }
+            tracer_applicability_note = (
+                "Not Yet Assessable because the programme has not graduated students. "
+                "Supervised industrial experience was assessed separately."
+            )
+            st.info(tracer_applicability_note)
+            tracer_section_responses = {
+                "supervised_industrial_experience": ask_scored_question(
+                    "Students' performance during supervised industrial and other similar experience are:",
+                    INDUSTRIAL_EXPERIENCE_OPTIONS,
+                    "t2",
+                ),
+            }
 
     academic_points = compute_section_points(academic, SECTION_MAX[ACADEMIC_MATTERS])
 
@@ -3959,7 +3982,10 @@ elif st.session_state.page == "New Assessment":
     library_points = compute_section_points(library, SECTION_MAX["Library"])
     funding_points = compute_section_points(funding, SECTION_MAX["Funding"])
     research_collaboration_points = compute_section_points(research_collaboration, SECTION_MAX["Research and Collaboration"])
-    tracer_points = compute_section_points(tracer_rating, SECTION_MAX["Tracer and Employers' Rating"])
+    tracer_points = compute_section_points(
+        tracer_section_responses,
+        SECTION_MAX["Tracer and Employers' Rating"],
+    )
 
     if all(v is not None for v in [
         academic_points, staffing_points, physical_facilities_points,
@@ -4008,7 +4034,8 @@ elif st.session_state.page == "New Assessment":
         input_data.update(library)
         input_data.update(funding)
         input_data.update(research_collaboration)
-        input_data.update(tracer_rating)
+        input_data.update(tracer_section_responses)
+        input_data["has_graduated_students"] = has_graduated_students == "Yes"
         input_data["staff_student_ratio_compliant"] = staff_ratio_feature
         input_data["proportion_core_staff_sufficient"] = core_staff_feature
         input_data["staff_rank_mix_balanced"] = staff_mix_feature
@@ -4052,7 +4079,7 @@ elif st.session_state.page == "New Assessment":
             "Library": library,
             "Funding": funding,
             "Research and Collaboration": research_collaboration,
-            "Tracer and Employers' Rating": tracer_rating,
+            "Tracer and Employers' Rating": tracer_section_responses,
         }
         findings = generate_findings(section_scores, criterion_responses)
         current_assessment_date = date.today().isoformat()
@@ -4065,6 +4092,7 @@ elif st.session_state.page == "New Assessment":
             section_scores=section_scores,
             findings=findings,
             assessment_date=current_assessment_date,
+            tracer_applicability_note=tracer_applicability_note,
         )
 
         st.markdown(report)
@@ -4079,6 +4107,15 @@ elif st.session_state.page == "New Assessment":
             },
             "core_percentages": core_percentages,
             "accreditation_status": accreditation_status,
+            "applicability": {
+                "graduate_tracer": {
+                    "applicable": has_graduated_students == "Yes",
+                    "reason": tracer_applicability_note,
+                },
+                "supervised_industrial_experience": {
+                    "applicable": has_graduated_students == "No",
+                },
+            },
             "findings": [finding.to_dict() for finding in findings],
             "assessment_date": current_assessment_date,
             "rubric_scores": {
@@ -4087,6 +4124,10 @@ elif st.session_state.page == "New Assessment":
                 ),
                 "library_material_current": raw_option_score(
                     CURRENCY_OPTIONS, library["library_material_current"]
+                ),
+                "supervised_industrial_experience": raw_option_score(
+                    INDUSTRIAL_EXPERIENCE_OPTIONS,
+                    tracer_section_responses.get("supervised_industrial_experience"),
                 ),
             },
         }
@@ -4113,7 +4154,11 @@ elif st.session_state.page == "New Assessment":
         )
 
         st.success("Assessment and report saved successfully.")
-        st.download_button("Download Markdown Report", report, file_name="manual_readiness_report.md")
+        st.download_button(
+            "Download Markdown Report",
+            report,
+            file_name="Accreditation readiness report.md",
+        )
 
 # =========================================================
 # SAVED ASSESSMENTS
@@ -4177,11 +4222,10 @@ elif st.session_state.page == "Report History":
                 st.write(f"**Accreditation Status:** {display_status}")
                 st.write(f"**Report Date:** {display_date}")
                 st.markdown(public_report)
-                safe_programme_name = re.sub(r"[^A-Za-z0-9]+", "_", row["programme_name"]).strip("_").lower()
                 st.download_button(
                     "Download Report",
                     public_report,
-                    file_name=f"{safe_programme_name or 'programme'}_accreditation_report.md",
+                    file_name="Accreditation readiness report.md",
                     key=f"download_report_{row['id']}",
                 )
 

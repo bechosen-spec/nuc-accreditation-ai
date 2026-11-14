@@ -2,6 +2,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 from accreditation_reporting import CRITERION_RULES, build_deterministic_report, generate_findings
 from assessment_rules import ACADEMIC_MATTERS, SECTION_MAX, determine_accreditation_status
 
@@ -123,8 +125,8 @@ def test_failed_philosophy_and_objectives_is_reported_above_aggregate_threshold(
     assert finding.criterion == "Philosophy and objectives"
     assert finding.source_criterion_ids == ("philosophy_objectives_defined",)
     assert finding.deficiency == (
-        "The programme philosophy and objectives are not well stated or are not "
-        "aligned with the applicable CCMAS requirements."
+        "The programme philosophy and objectives do not meet the applicable "
+        "CCMAS statement-and-alignment criterion."
     )
     assert finding.remedy == (
         "The institution should revise and formally document the programme philosophy "
@@ -266,3 +268,136 @@ def test_finding_rules_cover_every_supported_manual_assessment_criterion():
 
     assert "philosophy_objectives_defined" in active_criteria
     assert not unmapped, f"Active questionnaire criteria without reporting rules: {sorted(unmapped)}"
+
+
+def test_no_graduates_report_explains_tracer_applicability_without_a_deficiency():
+    note = (
+        "Not Yet Assessable because the programme has not graduated students. "
+        "Supervised industrial experience was assessed separately."
+    )
+    findings = generate_findings(
+        complete_scores(),
+        {"Tracer and Employers' Rating": {"supervised_industrial_experience": 1.0}},
+    )
+    report = build_deterministic_report(
+        institution="Test University",
+        discipline="Computing",
+        programme="Computer Science",
+        accreditation_status="FULL",
+        findings=findings,
+        assessment_date="2026-11-14",
+        tracer_applicability_note=note,
+    )
+
+    assert findings == []
+    assert note in report
+    assert "Graduate tracer assessment" in report
+    assert "graduate tracer system" not in report.lower()
+
+
+def test_industrial_experience_findings_follow_selected_rating():
+    average = generate_findings(
+        complete_scores(),
+        {"Tracer and Employers' Rating": {"supervised_industrial_experience": 0.5}},
+    )
+    below_average = generate_findings(
+        complete_scores(),
+        {"Tracer and Employers' Rating": {"supervised_industrial_experience": 0.0}},
+    )
+
+    assert len(average) == 1
+    assert "rated Average" in average[0].deficiency
+    assert "above Average" in average[0].remedy
+    assert len(below_average) == 1
+    assert "rated Below average" in below_average[0].deficiency
+    assert "below-average performance" in below_average[0].remedy
+
+
+def test_degree_project_deficiency_does_not_invent_unselected_weaknesses():
+    findings = generate_findings(
+        complete_scores(),
+        {ACADEMIC_MATTERS: {"degree_projects_adequate": 0.5}},
+    )
+
+    assert len(findings) == 1
+    assert findings[0].deficiency == (
+        "Degree projects are innovative and creative but are not adequately supervised."
+    )
+    assert "relevance" not in findings[0].deficiency.lower()
+    assert "quality" not in findings[0].deficiency.lower()
+    assert "supervis" in findings[0].remedy.lower()
+
+
+@pytest.mark.parametrize(
+    ("score", "expected", "unexpected"),
+    [
+        (0.66, "does not adequately cover", "quality standard"),
+        (0.33, "does not meet the required quality", "curriculum coverage"),
+        (0.0, "is not conducted", "quality, depth"),
+    ],
+)
+def test_practical_work_deficiency_matches_exact_response(score, expected, unexpected):
+    findings = generate_findings(
+        complete_scores(),
+        {ACADEMIC_MATTERS: {"practical_work_adequate": score}},
+    )
+
+    assert len(findings) == 1
+    assert expected in findings[0].deficiency
+    assert unexpected not in findings[0].deficiency
+
+
+def test_facility_findings_remain_separate_and_response_specific():
+    findings = generate_findings(
+        complete_scores(),
+        {
+            "Physical Facilities": {
+                "laboratory_space_adequate": 0.66,
+                "laboratory_equipment_adequate": 0.5,
+                "classroom_equipment_adequate": 0.5,
+                "office_accommodation_adequate": 0.66,
+            }
+        },
+    )
+
+    assert len(findings) == 4
+    by_criterion = {finding.criterion: finding for finding in findings}
+    assert "60% but less than 70% of the NUC space standard" in by_criterion["Laboratory and practical space"].deficiency
+    assert "60% but less than 70% of the CCMAS specification" in by_criterion["Laboratory equipment"].deficiency
+    assert "partially meets" in by_criterion["Classroom equipment"].deficiency
+    assert by_criterion["Office accommodation"].deficiency == (
+        "Office accommodation is well equipped but slightly inadequate in space."
+    )
+
+
+@pytest.mark.parametrize(
+    ("score", "band"),
+    [
+        (1 / 3, "below ₦300,000"),
+        (2 / 3, "between ₦300,000 and below ₦1,000,000"),
+    ],
+)
+def test_funding_deficiency_names_recorded_band(score, band):
+    findings = generate_findings(
+        complete_scores(),
+        {"Funding": {"programme_funding_adequate": score}},
+    )
+
+    assert len(findings) == 1
+    assert band in findings[0].deficiency
+
+
+def test_curriculum_combination_is_one_supported_statement_not_two_guesses():
+    findings = generate_findings(
+        complete_scores(),
+        {
+            ACADEMIC_MATTERS: {
+                "curriculum_aligned_with_BMAS": 0.0,
+                "curriculum_coverage_complete": 0.0,
+            }
+        },
+    )
+
+    assert len(findings) == 1
+    assert findings[0].deficiency.count(".") == 1
+    assert "including the required curriculum coverage" in findings[0].deficiency

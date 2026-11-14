@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from math import isfinite
 
 
-SCORING_POLICY_VERSION = "nuc-core-rules-v2"
+SCORING_POLICY_VERSION = "nuc-core-rules-v3"
 
 ACADEMIC_MATTERS = "Academic Matters"
 CORE_CATEGORIES = (
@@ -49,6 +49,12 @@ CURRENCY_OF_HOLDINGS_OPTIONS = (
     ("Current for recommended text and journals", 2),
     ("Current for recommended text but not current for journals or vice versa", 1),
     ("Not current at all for both recommended text and journals", 0),
+)
+
+SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS = (
+    ("Very good", 2),
+    ("Average", 1),
+    ("Below average", 0),
 )
 
 

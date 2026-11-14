@@ -137,3 +137,48 @@ def test_saved_assessments_shows_exactly_five_public_columns(tmp_path, monkeypat
         "Accreditation Status": "FULL ACCREDITATION",
         "Assessment Date": "31 Oct 2026",
     }
+
+
+def test_no_graduates_uses_separate_industrial_experience_question(tmp_path, monkeypatch):
+    database = tmp_path / "no-graduates.db"
+    monkeypatch.setenv("NUC_DB_PATH", str(database))
+    from pathlib import Path
+
+    app_file = Path(__file__).resolve().parents[1] / "app.py"
+    at = authenticated_app(app_file, database, "New Assessment")
+    graduates = next(
+        item for item in at.selectbox
+        if item.label == "Has the programme graduated students?"
+    )
+    graduates.set_value("No").run()
+
+    assert not at.exception
+    industrial = next(
+        item for item in at.selectbox
+        if item.label == "Students' performance during supervised industrial and other similar experience are:"
+    )
+    assert industrial.options == ["Very good", "Average", "Below average"]
+    assert not any(item.label == "Tracer and Employers' Rating" for item in at.selectbox)
+    assert any("Not Yet Assessable" in item.value for item in at.info)
+
+
+def test_programme_with_graduates_keeps_tracer_question(tmp_path, monkeypatch):
+    database = tmp_path / "with-graduates.db"
+    monkeypatch.setenv("NUC_DB_PATH", str(database))
+    from pathlib import Path
+
+    app_file = Path(__file__).resolve().parents[1] / "app.py"
+    at = authenticated_app(app_file, database, "New Assessment")
+    graduates = next(
+        item for item in at.selectbox
+        if item.label == "Has the programme graduated students?"
+    )
+    graduates.set_value("Yes").run()
+
+    assert not at.exception
+    tracer = next(item for item in at.selectbox if item.label == "Tracer and Employers' Rating")
+    assert tracer.options == [
+        "Tracer system is in place and graduates’ performance on the job is very good",
+        "Tracer system not in place but graduates’ performance on the job is good or vice versa",
+        "Tracer system not in place and performance below average",
+    ]
