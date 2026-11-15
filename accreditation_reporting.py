@@ -58,8 +58,8 @@ CRITERION_RULES: dict[str, CriterionRule] = {
     # Academic Matters
     "philosophy_objectives_defined": _rule(
         "Philosophy and objectives",
-        "academic_governance",
-        "The programme philosophy and objectives are not well stated or are not aligned with the applicable CCMAS requirements.",
+        "academic_philosophy",
+        "The programme philosophy and objectives do not meet the applicable CCMAS statement-and-alignment criterion.",
         "The institution should revise and formally document the programme philosophy and objectives to align with the applicable CCMAS requirements.",
     ),
     "curriculum_aligned_with_BMAS": _rule(
@@ -68,7 +68,7 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should review and revise the curriculum to align fully with the applicable minimum academic standards and retain evidence of approval and implementation.",
     ),
     "innovative_courses_present": _rule(
-        "Curriculum innovation", "academic_curriculum",
+        "Curriculum innovation", "academic_innovation",
         "The curriculum does not provide adequate evidence of relevant innovation and contemporary course content.",
         "The institution should strengthen the curriculum with relevant contemporary and innovative course content and document its approval and delivery.",
     ),
@@ -83,18 +83,18 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should enforce the prescribed admission requirements and retain complete records demonstrating compliance for every admitted student.",
     ),
     "academic_regulations_defined": _rule(
-        "Academic regulations", "academic_governance",
-        "Academic regulations are absent, incomplete or not being applied effectively.",
+        "Academic regulations", "academic_regulations",
+        "Academic regulations do not meet the required standard for availability, clarity, use and communication to students.",
         "The institution should approve, communicate and consistently apply comprehensive academic regulations for the programme.",
     ),
     "tests_and_examinations_standardized": _rule(
-        "Tests and examinations", "academic_assessment",
+        "Tests and examinations", "academic_tests",
         "The standard and administration of tests and examinations are inadequate.",
         "The institution should strengthen test and examination setting, moderation, administration and record-keeping in accordance with the approved academic regulations.",
     ),
     "evaluation_methods_clear": _rule(
-        "Evaluation of students' work", "academic_assessment",
-        "The methods used to evaluate students' work are not sufficiently clear or consistently applied.",
+        "Evaluation of students' work", "academic_evaluation",
+        "Evaluation of students' work does not meet the required marking-scheme and grading-consistency standard.",
         "The institution should define, communicate and consistently apply appropriate assessment methods and retain moderated assessment records.",
     ),
     "degree_projects_adequate": _rule(
@@ -108,8 +108,8 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should provide and document adequate practical activities covering the approved curriculum, with appropriate supervision and resources.",
     ),
     "student_course_evaluation_present": _rule(
-        "Students' course evaluation", "academic_quality",
-        "Student evaluation of courses and the learning environment is inadequate or ineffective.",
+        "Students' course evaluation", "academic_course_evaluation",
+        "Student evaluation of courses and the learning environment does not meet the required adequacy standard.",
         "The institution should implement an effective course-evaluation process, analyse the feedback and document resulting improvements.",
     ),
     "skills_acquisition_programme": _rule(
@@ -118,12 +118,12 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should strengthen structured skills-acquisition activities and retain evidence of students' attainment of relevant hard and soft skills.",
     ),
     "external_examiner_system": _rule(
-        "External examination", "academic_quality",
-        "The external examination system is absent or not operating to an adequate standard.",
+        "External examination", "academic_external_examination",
+        "The external examination system does not meet the required assessor-qualification and work-quality standard.",
         "The institution should engage suitably qualified external examiners, act on their reports and retain evidence of the complete external examination process.",
     ),
     "internal_quality_assurance": _rule(
-        "Internal quality assurance", "academic_quality",
+        "Internal quality assurance", "academic_internal_quality",
         "The programme lacks an effective internal quality assurance system.",
         "The institution should establish or strengthen the programme's internal quality assurance system and document regular monitoring and corrective action.",
     ),
@@ -134,69 +134,69 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should recruit sufficient qualified academic staff and manage enrolment to achieve the prescribed staff-student ratio.",
     ),
     "proportion_core_staff_sufficient": _rule(
-        "Core academic staff", "staffing_capacity",
+        "Core academic staff", "staffing_core",
         "The programme has an inadequate proportion of academic staff core to the discipline.",
         "The institution should recruit and retain additional qualified academic staff whose expertise is core to the programme discipline.",
     ),
     "staff_rank_mix_balanced": _rule(
-        "Academic staff rank mix", "staffing_profile",
+        "Academic staff rank mix", "staffing_rank_mix",
         "The academic staff rank mix is not adequately balanced.",
         "The institution should recruit and develop academic staff to achieve the prescribed balance across professorial, senior and other academic ranks.",
     ),
     "academic_staff_qualification_high": _rule(
-        "Academic staff qualifications", "staffing_qualification",
+        "Academic staff qualifications", "staffing_academic_qualification",
         "The proportion of appropriately qualified academic staff is inadequate.",
         "The institution should recruit appropriately qualified academic staff and support existing staff to obtain the required higher qualifications.",
     ),
     "staff_competence_verified": _rule(
-        "Teaching staff competence", "staffing_qualification",
+        "Teaching staff competence", "staffing_competence",
         "The competence of teaching staff is not adequately demonstrated.",
         "The institution should verify staff competence, address identified gaps through recruitment or development, and maintain supporting records.",
     ),
     "administrative_support_available": _rule(
         "Programme administration", "staffing_administration",
-        "Programme administration is not sufficiently effective or appropriately led.",
+        "Programme administration does not meet the required leadership and effectiveness standard.",
         "The institution should assign appropriately qualified academic leadership and strengthen the programme's administrative processes and records.",
     ),
     "non_teaching_staff_adequate": _rule(
-        "Non-teaching staff", "staffing_capacity",
+        "Non-teaching staff", "staffing_non_teaching",
         "The programme has inadequate non-teaching staff support.",
         "The institution should provide sufficient qualified technical and administrative staff to support programme delivery.",
     ),
     "academic_staff_development_programme": _rule(
-        "Academic staff development", "staffing_development",
+        "Academic staff development", "staffing_academic_development",
         "Academic staff development is inadequate.",
         "The institution should implement and document a sustained academic staff development programme addressing identified teaching and research needs.",
     ),
     "non_academic_staff_development_programme": _rule(
-        "Non-academic staff development", "staffing_development",
+        "Non-academic staff development", "staffing_non_academic_development",
         "Development opportunities for non-academic staff are inadequate.",
         "The institution should implement and document relevant development activities for technical and administrative staff.",
     ),
     # Physical Facilities
     "laboratory_space_adequate": _rule(
-        "Laboratory and practical space", "facilities_practical",
-        "Laboratory, clinic, studio or other practical space is inadequate for programme delivery.",
+        "Laboratory and practical space", "facilities_practical_space",
+        "Laboratory or other practical space does not meet the required programme space standard.",
         "The institution should provide sufficient fit-for-purpose practical space that meets the applicable programme requirements.",
     ),
     "laboratory_equipment_adequate": _rule(
-        "Laboratory equipment", "facilities_practical",
-        "Laboratory or practical equipment is inadequate in quality, quantity or functionality.",
+        "Laboratory equipment", "facilities_practical_equipment",
+        "Laboratory equipment does not meet the required CCMAS specification compliance level.",
         "The institution should procure, maintain and make available sufficient functional equipment that meets the programme specifications.",
     ),
     "classroom_space_adequate": _rule(
-        "Classroom space", "facilities_teaching",
+        "Classroom space", "facilities_classroom_space",
         "Available classroom or lecture theatre space is inadequate for the programme.",
         "The institution should provide adequate classroom and lecture theatre capacity that meets the applicable space standards.",
     ),
     "classroom_equipment_adequate": _rule(
-        "Classroom equipment", "facilities_teaching",
-        "Classroom equipment is inadequate or poorly maintained.",
+        "Classroom equipment", "facilities_classroom_equipment",
+        "Classroom equipment does not meet the combined adequacy and maintenance criterion.",
         "The institution should provide and maintain sufficient functional classroom equipment to support effective teaching and learning.",
     ),
     "office_accommodation_adequate": _rule(
         "Office accommodation", "facilities_office",
-        "Office accommodation is inadequate in space or equipment.",
+        "Office accommodation does not meet the assessed space-and-equipment standard.",
         "The institution should provide appropriately sized and equipped office accommodation for programme staff.",
     ),
     "safety_environment_present": _rule(
@@ -232,19 +232,24 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should increase and reliably release programme funding to support its documented teaching, staffing, facilities, library and quality assurance needs.",
     ),
     "research_collaboration_active": _rule(
-        "Research and collaboration", "research",
-        "Research and collaboration activities are inadequate or insufficiently multidisciplinary and applied.",
+        "Research and collaboration", "research_collaboration",
+        "Research and collaboration activity does not meet the assessed availability, multidisciplinary-engagement and application standard.",
         "The institution should strengthen documented research and collaboration activities, including relevant multidisciplinary participation and application of results.",
     ),
     "research_output_present": _rule(
-        "Research output", "research",
+        "Research output", "research_output",
         "Evidence of relevant research output is inadequate.",
         "The institution should support relevant research activity and maintain verifiable records of resulting outputs and impact.",
     ),
     "employer_rating_positive": _rule(
         "Graduate tracer and employer rating", "tracer",
-        "A functional graduate tracer system or satisfactory evidence of graduates' workplace performance is lacking.",
+        "Graduate tracing and employer-rating evidence does not meet the assessed standard.",
         "The institution should establish or strengthen a graduate tracer system and maintain appropriate records of graduates' employment and workplace performance.",
+    ),
+    "supervised_industrial_experience": _rule(
+        "Supervised industrial experience", "industrial_experience",
+        "Students' performance during supervised industrial and similar experience does not meet the required standard.",
+        "The institution should review supervised industrial placements, supervision and learning support, then document improvement in students' performance.",
     ),
     "tracer_study_available": _rule(
         "Graduate tracer study", "tracer",
@@ -252,6 +257,154 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "The institution should conduct regular graduate tracer studies, analyse the findings and document resulting programme improvements.",
     ),
 }
+
+
+# Response-specific wording is used where a rubric option establishes a
+# narrower fact than the criterion-level fallback. Keys are normalized scores
+# stored by the manual questionnaire.
+RESPONSE_SPECIFIC_FINDINGS: dict[str, dict[float, tuple[str, str]]] = {
+    "degree_projects_adequate": {
+        0.5: (
+            "Degree projects are innovative and creative but are not adequately supervised.",
+            "The institution should strengthen project-supervisor allocation, monitoring and documented feedback.",
+        ),
+        0.0: (
+            "Degree projects are not adequately supervised and do not demonstrate the required creativity and innovation.",
+            "The institution should improve project supervision and require project selection and assessment processes that demonstrate creativity and innovation.",
+        ),
+    },
+    "practical_work_adequate": {
+        0.66: (
+            "Practical work is conducted to a good standard but does not adequately cover the approved curriculum.",
+            "The institution should extend the practical-work schedule to cover the approved curriculum and retain evidence of delivery.",
+        ),
+        0.33: (
+            "Practical work is conducted but does not meet the required quality standard.",
+            "The institution should improve the design, delivery and quality assurance of practical work and retain evidence of the improved standard.",
+        ),
+        0.0: (
+            "Required practical work is not conducted.",
+            "The institution should implement and document the practical work required by the approved curriculum.",
+        ),
+    },
+    "laboratory_space_adequate": {
+        0.66: (
+            "Available practical space meets only 60% but less than 70% of the NUC space standard.",
+            "The institution should expand or reconfigure practical space to meet at least 70% of the applicable NUC space standard.",
+        ),
+        0.33: (
+            "Available practical space meets only 50% but less than 60% of the NUC space standard.",
+            "The institution should expand or reconfigure practical space to meet at least 70% of the applicable NUC space standard.",
+        ),
+        0.0: (
+            "Available practical space meets less than 50% of the NUC space standard.",
+            "The institution should provide sufficient fit-for-purpose practical space to meet at least 70% of the applicable NUC space standard.",
+        ),
+    },
+    "laboratory_equipment_adequate": {
+        0.5: (
+            "Laboratory equipment meets only 60% but less than 70% of the CCMAS specification.",
+            "The institution should close the documented equipment gap so compliance reaches the required CCMAS level.",
+        ),
+        0.25: (
+            "Laboratory equipment meets only 50% but less than 60% of the CCMAS specification.",
+            "The institution should procure and commission the equipment needed to reach the required CCMAS compliance level.",
+        ),
+        0.0: (
+            "Laboratory equipment meets less than 50% of the CCMAS specification.",
+            "The institution should implement a documented procurement and commissioning plan to reach the required CCMAS compliance level.",
+        ),
+    },
+    "classroom_equipment_adequate": {
+        0.5: (
+            "Classroom equipment only partially meets the combined adequacy and maintenance criterion.",
+            "The institution should verify the recorded classroom-equipment gap and correct the affected criterion.",
+        ),
+        0.0: (
+            "Classroom equipment is inadequate and not well maintained.",
+            "The institution should provide adequate classroom equipment and implement a documented maintenance programme.",
+        ),
+    },
+    "office_accommodation_adequate": {
+        0.66: (
+            "Office accommodation is well equipped but slightly inadequate in space.",
+            "The institution should increase office space for programme staff while maintaining the existing equipment provision.",
+        ),
+        0.33: (
+            "Office accommodation only partially meets the combined space-and-equipment standard.",
+            "The institution should verify and correct the recorded office-accommodation gap.",
+        ),
+        0.0: (
+            "Office accommodation does not meet the required suitability standard.",
+            "The institution should provide suitable office accommodation that meets the required space and equipment standard.",
+        ),
+    },
+    "programme_funding_adequate": {
+        1 / 3: (
+            "Recorded annual programme funding is below ₦300,000.",
+            "The institution should increase and reliably release annual programme funding to at least the adequate assessment band and document its use against programme needs.",
+        ),
+        2 / 3: (
+            "Recorded annual programme funding is between ₦300,000 and below ₦1,000,000, which remains below the adequate assessment band.",
+            "The institution should increase and reliably release annual programme funding to at least ₦1,000,000 and document its use against programme needs.",
+        ),
+    },
+    "research_collaboration_active": {
+        0.66: (
+            "Research and collaboration are available and applied, but multidisciplinary engagement is not demonstrated.",
+            "The institution should add and document relevant multidisciplinary participation in research and collaboration activities.",
+        ),
+        0.33: (
+            "Research and collaboration are available, but multidisciplinary engagement and application of results are not demonstrated.",
+            "The institution should document multidisciplinary participation and the application of results from research and collaboration activities.",
+        ),
+        0.0: (
+            "Research and collaboration activity is not available.",
+            "The institution should establish and document relevant research and collaboration activities.",
+        ),
+    },
+    "employer_rating_positive": {
+        0.5: (
+            "Graduate tracing and workplace-performance evidence only partially meet the combined assessment criterion.",
+            "The institution should identify and correct the unmet tracer-system or workplace-performance evidence requirement.",
+        ),
+        0.0: (
+            "A graduate tracer system is not in place and recorded workplace performance is below average.",
+            "The institution should establish a graduate tracer system and implement a documented plan to improve and monitor graduates' workplace performance.",
+        ),
+    },
+    "supervised_industrial_experience": {
+        0.5: (
+            "Students' performance during supervised industrial and similar experience is rated Average.",
+            "The institution should strengthen placement preparation, supervision and feedback to improve industrial-experience performance above Average.",
+        ),
+        0.0: (
+            "Students' performance during supervised industrial and similar experience is rated Below average.",
+            "The institution should review placements, supervision and learning support, then implement and document corrective action for below-average performance.",
+        ),
+    },
+}
+
+
+def criterion_rule_for_response(
+    criterion_id: str,
+    value: float,
+) -> CriterionRule | None:
+    """Return deterministic wording grounded in the selected rubric response."""
+
+    base_rule = CRITERION_RULES.get(criterion_id)
+    if base_rule is None:
+        return None
+    for expected, (deficiency, remedy) in RESPONSE_SPECIFIC_FINDINGS.get(criterion_id, {}).items():
+        if abs(float(value) - expected) < 1e-9:
+            return CriterionRule(
+                label=base_rule.label,
+                group=base_rule.group,
+                deficiency=deficiency,
+                remedy=remedy,
+                minimum_normalized_score=base_rule.minimum_normalized_score,
+            )
+    return base_rule
 
 
 CATEGORY_FALLBACKS: dict[str, tuple[str, str]] = {
@@ -299,6 +452,7 @@ def _finding(
     source_ids: list[str],
     *,
     missing: bool = False,
+    observed_performance: str | None = None,
 ) -> Finding:
     return Finding(
         id=f"D{number:03d}",
@@ -307,7 +461,10 @@ def _finding(
         deficiency=deficiency,
         remedy=remedy,
         source_criterion_ids=tuple(source_ids),
-        observed_performance="No response recorded" if missing else "Recorded assessment response indicates a weakness",
+        observed_performance=(
+            observed_performance
+            or ("No response recorded" if missing else "Recorded assessment response indicates a weakness")
+        ),
         expected_standard="A verified assessment response" if missing else "A satisfactory response under the configured assessment rubric",
         priority="High" if category in CORE_CATEGORIES or missing else "Medium",
         timeframe="Before finalising the assessment" if missing else "As part of the programme improvement plan",
@@ -323,27 +480,45 @@ def generate_findings(
     findings: list[Finding] = []
     for category in SECTION_MAX:
         responses = criterion_responses.get(category, {})
-        grouped: dict[str, list[tuple[str, CriterionRule]]] = {}
+        grouped: dict[str, list[tuple[str, CriterionRule, float]]] = {}
         missing_ids: list[str] = []
 
         for criterion_id, value in responses.items():
             if value is None:
                 missing_ids.append(criterion_id)
                 continue
-            rule = CRITERION_RULES.get(criterion_id)
+            rule = criterion_rule_for_response(criterion_id, float(value))
             if rule is not None and float(value) < rule.minimum_normalized_score:
-                grouped.setdefault(rule.group, []).append((criterion_id, rule))
+                grouped.setdefault(rule.group, []).append((criterion_id, rule, float(value)))
 
-        for items in grouped.values():
-            source_ids = [criterion_id for criterion_id, _ in items]
-            rules = [rule for _, rule in items]
+        for group, items in grouped.items():
+            source_ids = [criterion_id for criterion_id, _, _ in items]
+            rules = [rule for _, rule, _ in items]
+            deficiency = " ".join(dict.fromkeys(rule.deficiency for rule in rules))
+            remedy = " ".join(dict.fromkeys(rule.remedy for rule in rules))
+            if group == "academic_curriculum" and {
+                "curriculum_aligned_with_BMAS",
+                "curriculum_coverage_complete",
+            }.issubset(source_ids):
+                deficiency = (
+                    "The curriculum does not adequately align with the applicable minimum "
+                    "academic standards, including the required curriculum coverage."
+                )
+                remedy = (
+                    "The institution should revise and implement the curriculum so it aligns "
+                    "fully with the applicable minimum academic standards and required coverage."
+                )
             findings.append(_finding(
                 len(findings) + 1,
                 category,
                 ", ".join(rule.label for rule in rules),
-                " ".join(dict.fromkeys(rule.deficiency for rule in rules)),
-                " ".join(dict.fromkeys(rule.remedy for rule in rules)),
+                deficiency,
+                remedy,
                 source_ids,
+                observed_performance="; ".join(
+                    f"{criterion_id}={value:.2f} normalized"
+                    for criterion_id, _, value in items
+                ),
             ))
 
         if missing_ids:
@@ -410,6 +585,7 @@ def build_report_data(
     accreditation_status: str,
     findings: list[Finding],
     assessment_date: date | str | None = None,
+    tracer_applicability_note: str | None = None,
 ) -> dict[str, Any]:
     if assessment_date is None:
         display_date = date.today().strftime("%d %B %Y")
@@ -430,6 +606,7 @@ def build_report_data(
             "discipline": discipline,
             "programme": programme,
             "status": f"{status} ACCREDITATION",
+            "tracer_applicability_note": tracer_applicability_note,
         },
         "findings": [finding.to_dict() for finding in findings],
     }
@@ -440,6 +617,12 @@ def format_markdown_report(report: Mapping[str, Any]) -> str:
 
     summary = report["summary"]
     findings = report["findings"]
+    tracer_note = summary.get("tracer_applicability_note")
+    tracer_summary = (
+        f"\n- **Graduate tracer assessment:** {tracer_note}"
+        if tracer_note
+        else ""
+    )
     if findings:
         deficiency_text = "\n".join(
             f"{index}. {item['deficiency']}" for index, item in enumerate(findings, start=1)
@@ -461,7 +644,7 @@ def format_markdown_report(report: Mapping[str, Any]) -> str:
 - **Institution name:** {summary['institution']}
 - **Discipline:** {summary['discipline']}
 - **Programme name:** {summary['programme']}
-- **Accreditation status:** {summary['status']}
+- **Accreditation status:** {summary['status']}{tracer_summary}
 
 ## Deficiencies
 
@@ -482,6 +665,7 @@ def build_deterministic_report(
     assessment_date: date | str | None = None,
     programme_score: float | None = None,
     section_scores: Mapping[str, float] | None = None,
+    tracer_applicability_note: str | None = None,
 ) -> str:
     """Build the public report; score arguments remain for caller compatibility."""
 
@@ -493,6 +677,7 @@ def build_deterministic_report(
         accreditation_status=accreditation_status,
         findings=findings,
         assessment_date=assessment_date,
+        tracer_applicability_note=tracer_applicability_note,
     ))
 
 

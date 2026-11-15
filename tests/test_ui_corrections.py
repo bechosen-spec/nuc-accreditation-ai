@@ -35,6 +35,9 @@ def test_raw_score_downloads_are_absent():
     assert "Download JSON Assessment Record" not in ACTIVE_SOURCE
     assert "Download CSV Score Summary" not in ACTIVE_SOURCE
     assert "Download Markdown Report" in ASSESSMENT_UI
+    assert 'file_name="Accreditation readiness report.md"' in ASSESSMENT_UI
+    assert 'file_name="Accreditation readiness report.md"' in HISTORY_UI
+    assert "manual_readiness_report.md" not in ACTIVE_SOURCE
 
 
 def test_saved_assessments_uses_the_five_column_view():
@@ -49,6 +52,7 @@ def test_report_history_hides_workflow_and_score_metadata():
     assert "programme_score" not in HISTORY_UI
     assert "evidence_coverage" not in HISTORY_UI
     assert "public_report_from_history" in HISTORY_UI
+    assert "tracer_applicability_note=tracer_applicability_note" in ACTIVE_SOURCE
 
 
 def test_dashboard_removes_average_programme_score_and_keeps_distribution():

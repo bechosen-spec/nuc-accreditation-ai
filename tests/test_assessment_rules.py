@@ -8,6 +8,7 @@ from assessment_rules import (
     CURRENCY_OF_HOLDINGS_OPTIONS,
     LIBRARY_HOLDINGS_OPTIONS,
     SECTION_MAX,
+    SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS,
     TOTAL_MAX_SCORE,
     calculate_funding_score,
     determine_accreditation_status,
@@ -130,3 +131,14 @@ def test_currency_of_holdings_has_corrected_fourth_option_and_scores():
         1,
     )
     assert max(score for _, score in CURRENCY_OF_HOLDINGS_OPTIONS) == 4
+
+
+def test_supervised_industrial_experience_uses_exact_two_one_zero_rubric():
+    assert SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS == (
+        ("Very good", 2),
+        ("Average", 1),
+        ("Below average", 0),
+    )
+    options = scored_options(SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS, maximum=2)
+    assert [option["score"] for option in options] == [2, 1, 0]
+    assert [option["score"] / option["max_score"] for option in options] == [1.0, 0.5, 0.0]
