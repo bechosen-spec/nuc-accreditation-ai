@@ -14,12 +14,21 @@ DASHBOARD_UI = DASHBOARD_UI.split("# NEW ASSESSMENT", 1)[0]
 
 
 def test_required_interface_copy_is_present():
-    assert "NUC Accreditation Readiness System" in ACTIVE_SOURCE
+    assert "NUC Accreditation Prediction System" in ACTIVE_SOURCE
+    assert "NUC Accreditation Readiness System" not in ACTIVE_SOURCE
     assert "Monitor programme accreditation readiness and track assessment progress." in ACTIVE_SOURCE
     assert "Start Accreditation Assessment" in ACTIVE_SOURCE
     assert "Evaluate programme accreditation readiness using the required assessment criteria." in ACTIVE_SOURCE
     assert "Generate Accreditation Report" in ASSESSMENT_UI
     assert "Download Markdown Report" in ASSESSMENT_UI
+
+
+def test_questionnaire_notices_are_removed_without_removing_inputs():
+    assert "How much funding is allocated to the programme yearly? (₦)" in ASSESSMENT_UI
+    assert "Funding classification:" not in ASSESSMENT_UI
+    assert "Has the programme graduated students?" in ASSESSMENT_UI
+    assert "Students' performance during supervised industrial and other similar experience are:" in ASSESSMENT_UI
+    assert "st.info(tracer_applicability_note)" not in ASSESSMENT_UI
 
 
 def test_unwanted_homepage_and_result_copy_is_absent():
