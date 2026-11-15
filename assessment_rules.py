@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from math import isfinite
 
 
-SCORING_POLICY_VERSION = "nuc-core-rules-v3"
+SCORING_POLICY_VERSION = "nuc-core-rules-v4"
 
 ACADEMIC_MATTERS = "Academic Matters"
 CORE_CATEGORIES = (
@@ -33,6 +33,10 @@ SECTION_MAX = {
 }
 
 TOTAL_MAX_SCORE = sum(SECTION_MAX.values())
+
+FUNDING_INADEQUATE_LIMIT = 300_000
+FUNDING_VERY_ADEQUATE_LIMIT = 1_000_000
+FUNDING_ADEQUATE_NORMALIZED_SCORE = 2 / SECTION_MAX["Funding"]
 
 
 LIBRARY_HOLDINGS_OPTIONS = (
@@ -144,20 +148,20 @@ def determine_accreditation_status(
 
 
 def calculate_funding_score(amount: float) -> int:
-    """Return funding points using the corrected Naira boundaries.
+    """Return funding points for the confirmed three-band classification.
 
-    The correction specifies that the second band starts at ₦300,000, so that
-    value is the implemented boundary.  Zero is a valid amount and receives one
-    point, as it is within the stated below-₦300,000 band.
+    Inadequate funding below ₦300,000 receives 1 point, Adequate funding from
+    ₦300,000 to below ₦1,000,000 receives 2 points, and Very Adequate funding
+    from ₦1,000,000 receives 3 points. The maximum programme total remains 125.
     """
 
     if amount is None or not isinstance(amount, (int, float)):
         raise ValueError("Invalid funding amount")
     if not isfinite(float(amount)) or amount < 0:
         raise ValueError("Invalid funding amount")
-    if amount < 300_000:
+    if amount < FUNDING_INADEQUATE_LIMIT:
         return 1
-    if amount < 1_000_000:
+    if amount < FUNDING_VERY_ADEQUATE_LIMIT:
         return 2
     return 3
 
@@ -165,8 +169,8 @@ def calculate_funding_score(amount: float) -> int:
 def funding_band(amount: float) -> tuple[str, int]:
     points = calculate_funding_score(amount)
     labels = {
-        1: "Below ₦300,000",
-        2: "₦300,000 to below ₦1,000,000",
-        3: "₦1,000,000 and above",
+        1: "Inadequate",
+        2: "Adequate",
+        3: "Very Adequate",
     }
     return labels[points], points

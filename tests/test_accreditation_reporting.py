@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from accreditation_reporting import CRITERION_RULES, build_deterministic_report, generate_findings
-from assessment_rules import ACADEMIC_MATTERS, SECTION_MAX, determine_accreditation_status
+from assessment_rules import (
+    ACADEMIC_MATTERS,
+    SECTION_MAX,
+    calculate_funding_score,
+    determine_accreditation_status,
+)
 
 
 APP_SOURCE = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
@@ -385,11 +390,12 @@ def test_facility_findings_remain_separate_and_response_specific():
     )
 
 
-@pytest.mark.parametrize("score", [1 / 3, 2 / 3])
-def test_funding_finding_is_concise_and_does_not_expose_bands(score):
+def test_inadequate_funding_finding_is_concise_and_does_not_expose_bands():
+    section_scores = complete_scores()
+    section_scores["Funding"] = 1
     findings = generate_findings(
-        complete_scores(),
-        {"Funding": {"programme_funding_adequate": score}},
+        section_scores,
+        {"Funding": {"programme_funding_adequate": 1 / 3}},
     )
 
     assert len(findings) == 1
@@ -397,6 +403,24 @@ def test_funding_finding_is_concise_and_does_not_expose_bands(score):
     assert findings[0].remedy == "The programme should be adequately funded."
     assert "₦" not in findings[0].deficiency
     assert "₦" not in findings[0].remedy
+
+
+@pytest.mark.parametrize(
+    "amount",
+    [300_000, 900_000, 900_001, 999_999, 1_000_000, 1_500_000],
+)
+def test_adequate_or_better_funding_has_no_finding(amount):
+    points = calculate_funding_score(amount)
+    normalized_score = points / SECTION_MAX["Funding"]
+    section_scores = complete_scores()
+    section_scores["Funding"] = points
+
+    findings = generate_findings(
+        section_scores,
+        {"Funding": {"programme_funding_adequate": normalized_score}},
+    )
+
+    assert findings == []
 
 
 def test_markdown_report_uses_corrected_non_numerical_findings():
@@ -407,7 +431,7 @@ def test_markdown_report_uses_corrected_non_numerical_findings():
                 "laboratory_space_adequate": 0.0,
                 "laboratory_equipment_adequate": 0.0,
             },
-            "Funding": {"programme_funding_adequate": 2 / 3},
+            "Funding": {"programme_funding_adequate": 1 / 3},
         },
     )
     report = build_deterministic_report(

@@ -1703,9 +1703,9 @@ from assessment_rules import (
     SECTION_MAX,
     SUPERVISED_INDUSTRIAL_EXPERIENCE_OPTIONS,
     TOTAL_MAX_SCORE,
-    calculate_funding_score,
     determine_accreditation_status,
     format_percentage,
+    funding_band,
     raw_option_score,
     score_percentage,
     scored_options,
@@ -2665,13 +2665,7 @@ def compute_section_points(responses: dict, max_points: float):
 def classify_funding_amount(amount):
     if amount is None:
         return None, None
-    points = calculate_funding_score(amount)
-    if points == 1:
-        label = "Below ₦300,000"
-    elif points == 2:
-        label = "₦300,000 to below ₦1,000,000"
-    else:
-        label = "₦1,000,000 and above"
+    label, points = funding_band(amount)
     # The form stores normalized responses; compute_section_points converts this
     # value back to the authoritative 0–3 section points.
     return label, points / SECTION_MAX["Funding"]
@@ -3910,7 +3904,7 @@ elif st.session_state.page == "New Assessment":
             value=None,
             placeholder="Enter amount"
         )
-        _, funding_score_value = classify_funding_amount(funding_amount)
+        funding_classification, funding_score_value = classify_funding_amount(funding_amount)
         funding = {"programme_funding_adequate": funding_score_value}
 
     with tab6:
@@ -4030,6 +4024,8 @@ elif st.session_state.page == "New Assessment":
         input_data.update(facilities)
         input_data.update(library)
         input_data.update(funding)
+        input_data["programme_funding_amount"] = float(funding_amount)
+        input_data["programme_funding_classification"] = funding_classification
         input_data.update(research_collaboration)
         input_data.update(tracer_section_responses)
         input_data["has_graduated_students"] = has_graduated_students == "Yes"

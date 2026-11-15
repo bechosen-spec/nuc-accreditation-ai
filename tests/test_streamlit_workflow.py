@@ -173,7 +173,7 @@ def test_funding_input_keeps_scoring_without_classification_notice(tmp_path, mon
         item for item in at.number_input
         if item.label == "How much funding is allocated to the programme yearly? (₦)"
     )
-    funding.set_value(300_000.0).run()
+    funding.set_value(900_001.0).run()
 
     assert not at.exception
     assert not any("Funding classification:" in item.value for item in at.info)
@@ -205,7 +205,7 @@ def test_generated_report_ui_and_download_use_corrected_findings(tmp_path, monke
         "Number of academic staff with staff development programme": 8,
         "Number of non-teaching staff": 5,
         "Number of non-academic staff with staff development programme": 4,
-        "How much funding is allocated to the programme yearly? (₦)": 300_000.0,
+        "How much funding is allocated to the programme yearly? (₦)": 900_001.0,
     }
     for item in at.number_input:
         if item.label in staffing_values:
@@ -237,8 +237,8 @@ def test_generated_report_ui_and_download_use_corrected_findings(tmp_path, monke
         item.value for item in at.markdown
         if "## Accreditation Status" in item.value
     )
-    assert "Programme funding is inadequate." in report_text
-    assert "The programme should be adequately funded." in report_text
+    assert "Programme funding is inadequate." not in report_text
+    assert "The programme should be adequately funded." not in report_text
     assert "Available practical space does not meet the applicable NUC standard." in report_text
     assert "Laboratory equipment does not meet the applicable NUC standard." in report_text
     assert "₦300,000" not in report_text
@@ -248,6 +248,20 @@ def test_generated_report_ui_and_download_use_corrected_findings(tmp_path, monke
         item.label == "Download Markdown Report"
         for item in at.get("download_button")
     )
+
+    import json
+    import sqlite3
+
+    conn = sqlite3.connect(database)
+    saved_payload = json.loads(
+        conn.execute(
+            "SELECT assessment_payload FROM assessments ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+    )
+    conn.close()
+    assert saved_payload["responses"]["programme_funding_amount"] == 900_001.0
+    assert saved_payload["responses"]["programme_funding_classification"] == "Adequate"
+    assert saved_payload["section_scores"]["Funding"] == 2.0
 
 
 def test_programme_with_graduates_keeps_tracer_question(tmp_path, monkeypatch):

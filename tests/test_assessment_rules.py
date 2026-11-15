@@ -13,6 +13,7 @@ from assessment_rules import (
     calculate_funding_score,
     determine_accreditation_status,
     format_percentage,
+    funding_band,
     raw_option_score,
     score_percentage,
     scored_options,
@@ -81,17 +82,21 @@ def test_high_programme_total_cannot_override_failed_core_category():
 
 
 @pytest.mark.parametrize(
-    ("amount", "expected"),
+    ("amount", "classification", "expected_score"),
     [
-        (0, 1),
-        (299_999, 1),
-        (300_000, 2),
-        (999_999, 2),
-        (1_000_000, 3),
+        (0, "Inadequate", 1),
+        (299_999, "Inadequate", 1),
+        (300_000, "Adequate", 2),
+        (900_000, "Adequate", 2),
+        (900_001, "Adequate", 2),
+        (999_999, "Adequate", 2),
+        (1_000_000, "Very Adequate", 3),
+        (1_500_000, "Very Adequate", 3),
     ],
 )
-def test_funding_boundaries(amount, expected):
-    assert calculate_funding_score(amount) == expected
+def test_funding_boundaries(amount, classification, expected_score):
+    assert calculate_funding_score(amount) == expected_score
+    assert funding_band(amount) == (classification, expected_score)
 
 
 @pytest.mark.parametrize("amount", [None, -1, math.nan, math.inf])
