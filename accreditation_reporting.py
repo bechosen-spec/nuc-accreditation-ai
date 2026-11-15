@@ -12,7 +12,12 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from typing import Any, Mapping
 
-from assessment_rules import CORE_CATEGORIES, SECTION_MAX, score_percentage
+from assessment_rules import (
+    CORE_CATEGORIES,
+    FUNDING_ADEQUATE_NORMALIZED_SCORE,
+    SECTION_MAX,
+    score_percentage,
+)
 
 
 @dataclass(frozen=True)
@@ -50,8 +55,20 @@ class Finding:
         return record
 
 
-def _rule(label: str, group: str, deficiency: str, remedy: str) -> CriterionRule:
-    return CriterionRule(label, group, deficiency, remedy)
+def _rule(
+    label: str,
+    group: str,
+    deficiency: str,
+    remedy: str,
+    minimum_normalized_score: float = 0.70,
+) -> CriterionRule:
+    return CriterionRule(
+        label,
+        group,
+        deficiency,
+        remedy,
+        minimum_normalized_score,
+    )
 
 
 CRITERION_RULES: dict[str, CriterionRule] = {
@@ -230,6 +247,7 @@ CRITERION_RULES: dict[str, CriterionRule] = {
         "Programme funding", "funding",
         "Programme funding is inadequate.",
         "The programme should be adequately funded.",
+        FUNDING_ADEQUATE_NORMALIZED_SCORE,
     ),
     "research_collaboration_active": _rule(
         "Research and collaboration", "research_collaboration",
@@ -341,10 +359,6 @@ RESPONSE_SPECIFIC_FINDINGS: dict[str, dict[float, tuple[str, str]]] = {
     },
     "programme_funding_adequate": {
         1 / 3: (
-            "Programme funding is inadequate.",
-            "The programme should be adequately funded.",
-        ),
-        2 / 3: (
             "Programme funding is inadequate.",
             "The programme should be adequately funded.",
         ),
@@ -482,13 +496,18 @@ def generate_findings(
         responses = criterion_responses.get(category, {})
         grouped: dict[str, list[tuple[str, CriterionRule, float]]] = {}
         missing_ids: list[str] = []
+        all_responses_satisfactory = bool(responses)
 
         for criterion_id, value in responses.items():
             if value is None:
                 missing_ids.append(criterion_id)
+                all_responses_satisfactory = False
                 continue
             rule = criterion_rule_for_response(criterion_id, float(value))
-            if rule is not None and float(value) < rule.minimum_normalized_score:
+            if rule is None:
+                all_responses_satisfactory = False
+            elif float(value) < rule.minimum_normalized_score:
+                all_responses_satisfactory = False
                 grouped.setdefault(rule.group, []).append((criterion_id, rule, float(value)))
 
         for group, items in grouped.items():
@@ -548,7 +567,11 @@ def generate_findings(
                 [],
                 missing=True,
             ))
-        elif value is not None and not has_detailed_finding:
+        elif (
+            value is not None
+            and not has_detailed_finding
+            and not all_responses_satisfactory
+        ):
             percentage = score_percentage(float(value), SECTION_MAX[category])
             if percentage < 70:
                 deficiency, remedy = CATEGORY_FALLBACKS[category]
