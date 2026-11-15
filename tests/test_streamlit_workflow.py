@@ -159,7 +159,95 @@ def test_no_graduates_uses_separate_industrial_experience_question(tmp_path, mon
     )
     assert industrial.options == ["Very good", "Average", "Below average"]
     assert not any(item.label == "Tracer and Employers' Rating" for item in at.selectbox)
-    assert any("Not Yet Assessable" in item.value for item in at.info)
+    assert not any("Not Yet Assessable" in item.value for item in at.info)
+
+
+def test_funding_input_keeps_scoring_without_classification_notice(tmp_path, monkeypatch):
+    database = tmp_path / "funding.db"
+    monkeypatch.setenv("NUC_DB_PATH", str(database))
+    from pathlib import Path
+
+    app_file = Path(__file__).resolve().parents[1] / "app.py"
+    at = authenticated_app(app_file, database, "New Assessment")
+    funding = next(
+        item for item in at.number_input
+        if item.label == "How much funding is allocated to the programme yearly? (₦)"
+    )
+    funding.set_value(300_000.0).run()
+
+    assert not at.exception
+    assert not any("Funding classification:" in item.value for item in at.info)
+
+
+def test_generated_report_ui_and_download_use_corrected_findings(tmp_path, monkeypatch):
+    database = tmp_path / "corrected-report.db"
+    monkeypatch.setenv("NUC_DB_PATH", str(database))
+    from pathlib import Path
+
+    app_file = Path(__file__).resolve().parents[1] / "app.py"
+    at = authenticated_app(app_file, database, "New Assessment")
+
+    institution = next(item for item in at.selectbox if item.label == "Name of Institution")
+    institution.set_value(institution.options[0]).run()
+    discipline = next(item for item in at.selectbox if item.label == "Discipline")
+    discipline.set_value(discipline.options[0]).run()
+    programme = next(item for item in at.selectbox if item.label == "Programme")
+    programme.set_value(programme.options[0]).run()
+
+    staffing_values = {
+        "Number of academic staff": 10,
+        "Number of students": 100,
+        "Number of academic staff core to the subject area": 8,
+        "Number of Professors/Readers": 3,
+        "Number of Senior Lecturers": 3,
+        "Number of Lecturers I and below": 4,
+        "Number of Ph.D Holders": 8,
+        "Number of academic staff with staff development programme": 8,
+        "Number of non-teaching staff": 5,
+        "Number of non-academic staff with staff development programme": 4,
+        "How much funding is allocated to the programme yearly? (₦)": 300_000.0,
+    }
+    for item in at.number_input:
+        if item.label in staffing_values:
+            item.set_value(staffing_values[item.label])
+
+    identity_fields = {"Name of Institution", "Discipline", "Programme"}
+    for item in at.selectbox:
+        if item.label in identity_fields:
+            continue
+        if item.label == "Has the programme graduated students?":
+            item.set_value("No")
+        elif item.options:
+            item.set_value(item.options[-1])
+    at.run()
+
+    industrial = next(
+        item for item in at.selectbox
+        if item.label == "Students' performance during supervised industrial and other similar experience are:"
+    )
+    industrial.set_value("Below average").run()
+
+    next(
+        button for button in at.button
+        if button.label == "Generate Accreditation Results"
+    ).click().run()
+
+    assert not at.exception
+    report_text = next(
+        item.value for item in at.markdown
+        if "## Accreditation Status" in item.value
+    )
+    assert "Programme funding is inadequate." in report_text
+    assert "The programme should be adequately funded." in report_text
+    assert "Available practical space does not meet the applicable NUC standard." in report_text
+    assert "Laboratory equipment does not meet the applicable NUC standard." in report_text
+    assert "₦300,000" not in report_text
+    assert "50%" not in report_text
+    assert "70%" not in report_text
+    assert any(
+        item.label == "Download Markdown Report"
+        for item in at.get("download_button")
+    )
 
 
 def test_programme_with_graduates_keeps_tracer_question(tmp_path, monkeypatch):

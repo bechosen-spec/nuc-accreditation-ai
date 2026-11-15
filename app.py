@@ -1730,7 +1730,7 @@ except ImportError:
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="NUC Accreditation Readiness System",
+    page_title="NUC Accreditation Prediction System",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -2349,7 +2349,7 @@ def render_logo(lockup=True):
         st.markdown(
             """
             <div style="font-weight:800;color:#0b1f3a;line-height:1.15;">
-                NUC Accreditation<br>Readiness System
+                NUC Accreditation<br>Prediction System
             </div>
             """,
             unsafe_allow_html=True,
@@ -3593,7 +3593,7 @@ if st.session_state.user is None:
         st.markdown(
             """
             <h1 style="color:#0b1f3a;margin:0.75rem 0 0.35rem;">
-                NUC Accreditation Readiness System
+                NUC Accreditation Prediction System
             </h1>
             <p class="subtle-copy" style="font-size:1.05rem;max-width:680px;">
                 Assess programme readiness, analyse accreditation evidence and generate actionable reports.
@@ -3910,10 +3910,8 @@ elif st.session_state.page == "New Assessment":
             value=None,
             placeholder="Enter amount"
         )
-        funding_band, funding_score_value = classify_funding_amount(funding_amount)
+        _, funding_score_value = classify_funding_amount(funding_amount)
         funding = {"programme_funding_adequate": funding_score_value}
-        if funding_band is not None:
-            st.info(f"Funding classification: {funding_band}")
 
     with tab6:
         research_collaboration = {
@@ -3944,7 +3942,6 @@ elif st.session_state.page == "New Assessment":
                 "Not Yet Assessable because the programme has not graduated students. "
                 "Supervised industrial experience was assessed separately."
             )
-            st.info(tracer_applicability_note)
             tracer_section_responses = {
                 "supervised_industrial_experience": ask_scored_question(
                     "Students' performance during supervised industrial and other similar experience are:",

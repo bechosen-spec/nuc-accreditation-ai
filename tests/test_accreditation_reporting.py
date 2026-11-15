@@ -362,29 +362,70 @@ def test_facility_findings_remain_separate_and_response_specific():
 
     assert len(findings) == 4
     by_criterion = {finding.criterion: finding for finding in findings}
-    assert "60% but less than 70% of the NUC space standard" in by_criterion["Laboratory and practical space"].deficiency
-    assert "60% but less than 70% of the CCMAS specification" in by_criterion["Laboratory equipment"].deficiency
+    practical_space = by_criterion["Laboratory and practical space"]
+    laboratory_equipment = by_criterion["Laboratory equipment"]
+    assert practical_space.deficiency == (
+        "Available practical space does not meet the applicable NUC standard."
+    )
+    assert practical_space.remedy == (
+        "The institution should provide adequate practical space that meets the applicable NUC standard."
+    )
+    assert laboratory_equipment.deficiency == (
+        "Laboratory equipment does not meet the applicable NUC standard."
+    )
+    assert laboratory_equipment.remedy == (
+        "The institution should provide adequate laboratory equipment that meets the applicable NUC requirements."
+    )
+    for finding in (practical_space, laboratory_equipment):
+        assert "%" not in finding.deficiency
+        assert "%" not in finding.remedy
     assert "partially meets" in by_criterion["Classroom equipment"].deficiency
     assert by_criterion["Office accommodation"].deficiency == (
         "Office accommodation is well equipped but slightly inadequate in space."
     )
 
 
-@pytest.mark.parametrize(
-    ("score", "band"),
-    [
-        (1 / 3, "below ₦300,000"),
-        (2 / 3, "between ₦300,000 and below ₦1,000,000"),
-    ],
-)
-def test_funding_deficiency_names_recorded_band(score, band):
+@pytest.mark.parametrize("score", [1 / 3, 2 / 3])
+def test_funding_finding_is_concise_and_does_not_expose_bands(score):
     findings = generate_findings(
         complete_scores(),
         {"Funding": {"programme_funding_adequate": score}},
     )
 
     assert len(findings) == 1
-    assert band in findings[0].deficiency
+    assert findings[0].deficiency == "Programme funding is inadequate."
+    assert findings[0].remedy == "The programme should be adequately funded."
+    assert "₦" not in findings[0].deficiency
+    assert "₦" not in findings[0].remedy
+
+
+def test_markdown_report_uses_corrected_non_numerical_findings():
+    findings = generate_findings(
+        complete_scores(),
+        {
+            "Physical Facilities": {
+                "laboratory_space_adequate": 0.0,
+                "laboratory_equipment_adequate": 0.0,
+            },
+            "Funding": {"programme_funding_adequate": 2 / 3},
+        },
+    )
+    report = build_deterministic_report(
+        institution="Test University",
+        discipline="Computing",
+        programme="Computer Science",
+        accreditation_status="INTERIM",
+        findings=findings,
+        assessment_date="2026-11-15",
+    )
+
+    assert "Programme funding is inadequate." in report
+    assert "The programme should be adequately funded." in report
+    assert "Available practical space does not meet the applicable NUC standard." in report
+    assert "Laboratory equipment does not meet the applicable NUC standard." in report
+    assert "₦300,000" not in report
+    assert "50%" not in report
+    assert "70%" not in report
 
 
 def test_curriculum_combination_is_one_supported_statement_not_two_guesses():

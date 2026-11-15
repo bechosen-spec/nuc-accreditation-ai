@@ -176,13 +176,13 @@ CRITERION_RULES: dict[str, CriterionRule] = {
     # Physical Facilities
     "laboratory_space_adequate": _rule(
         "Laboratory and practical space", "facilities_practical_space",
-        "Laboratory or other practical space does not meet the required programme space standard.",
-        "The institution should provide sufficient fit-for-purpose practical space that meets the applicable programme requirements.",
+        "Available practical space does not meet the applicable NUC standard.",
+        "The institution should provide adequate practical space that meets the applicable NUC standard.",
     ),
     "laboratory_equipment_adequate": _rule(
         "Laboratory equipment", "facilities_practical_equipment",
-        "Laboratory equipment does not meet the required CCMAS specification compliance level.",
-        "The institution should procure, maintain and make available sufficient functional equipment that meets the programme specifications.",
+        "Laboratory equipment does not meet the applicable NUC standard.",
+        "The institution should provide adequate laboratory equipment that meets the applicable NUC requirements.",
     ),
     "classroom_space_adequate": _rule(
         "Classroom space", "facilities_classroom_space",
@@ -228,8 +228,8 @@ CRITERION_RULES: dict[str, CriterionRule] = {
     # Other assessed categories
     "programme_funding_adequate": _rule(
         "Programme funding", "funding",
-        "Recorded annual programme funding falls within an inadequate assessment band.",
-        "The institution should increase and reliably release programme funding to support its documented teaching, staffing, facilities, library and quality assurance needs.",
+        "Programme funding is inadequate.",
+        "The programme should be adequately funded.",
     ),
     "research_collaboration_active": _rule(
         "Research and collaboration", "research_collaboration",
@@ -289,30 +289,30 @@ RESPONSE_SPECIFIC_FINDINGS: dict[str, dict[float, tuple[str, str]]] = {
     },
     "laboratory_space_adequate": {
         0.66: (
-            "Available practical space meets only 60% but less than 70% of the NUC space standard.",
-            "The institution should expand or reconfigure practical space to meet at least 70% of the applicable NUC space standard.",
+            "Available practical space does not meet the applicable NUC standard.",
+            "The institution should provide adequate practical space that meets the applicable NUC standard.",
         ),
         0.33: (
-            "Available practical space meets only 50% but less than 60% of the NUC space standard.",
-            "The institution should expand or reconfigure practical space to meet at least 70% of the applicable NUC space standard.",
+            "Available practical space does not meet the applicable NUC standard.",
+            "The institution should provide adequate practical space that meets the applicable NUC standard.",
         ),
         0.0: (
-            "Available practical space meets less than 50% of the NUC space standard.",
-            "The institution should provide sufficient fit-for-purpose practical space to meet at least 70% of the applicable NUC space standard.",
+            "Available practical space does not meet the applicable NUC standard.",
+            "The institution should provide adequate practical space that meets the applicable NUC standard.",
         ),
     },
     "laboratory_equipment_adequate": {
         0.5: (
-            "Laboratory equipment meets only 60% but less than 70% of the CCMAS specification.",
-            "The institution should close the documented equipment gap so compliance reaches the required CCMAS level.",
+            "Laboratory equipment does not meet the applicable NUC standard.",
+            "The institution should provide adequate laboratory equipment that meets the applicable NUC requirements.",
         ),
         0.25: (
-            "Laboratory equipment meets only 50% but less than 60% of the CCMAS specification.",
-            "The institution should procure and commission the equipment needed to reach the required CCMAS compliance level.",
+            "Laboratory equipment does not meet the applicable NUC standard.",
+            "The institution should provide adequate laboratory equipment that meets the applicable NUC requirements.",
         ),
         0.0: (
-            "Laboratory equipment meets less than 50% of the CCMAS specification.",
-            "The institution should implement a documented procurement and commissioning plan to reach the required CCMAS compliance level.",
+            "Laboratory equipment does not meet the applicable NUC standard.",
+            "The institution should provide adequate laboratory equipment that meets the applicable NUC requirements.",
         ),
     },
     "classroom_equipment_adequate": {
@@ -341,12 +341,12 @@ RESPONSE_SPECIFIC_FINDINGS: dict[str, dict[float, tuple[str, str]]] = {
     },
     "programme_funding_adequate": {
         1 / 3: (
-            "Recorded annual programme funding is below ₦300,000.",
-            "The institution should increase and reliably release annual programme funding to at least the adequate assessment band and document its use against programme needs.",
+            "Programme funding is inadequate.",
+            "The programme should be adequately funded.",
         ),
         2 / 3: (
-            "Recorded annual programme funding is between ₦300,000 and below ₦1,000,000, which remains below the adequate assessment band.",
-            "The institution should increase and reliably release annual programme funding to at least ₦1,000,000 and document its use against programme needs.",
+            "Programme funding is inadequate.",
+            "The programme should be adequately funded.",
         ),
     },
     "research_collaboration_active": {
@@ -425,8 +425,8 @@ CATEGORY_FALLBACKS: dict[str, tuple[str, str]] = {
         "The institution should strengthen the library resources and access arrangements identified as inadequate in the assessment evidence.",
     ),
     "Funding": (
-        "Recorded programme funding is inadequate to support programme needs.",
-        "The institution should provide and reliably release adequate programme funding against a documented improvement plan.",
+        "Programme funding is inadequate.",
+        "The programme should be adequately funded.",
     ),
     "Research and Collaboration": (
         "Recorded research and collaboration activity is inadequate.",
